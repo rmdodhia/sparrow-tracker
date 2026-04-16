@@ -104,11 +104,14 @@ def attention_card_html(location: str, status: str, detail: str, severity: str =
     border = border_colors.get(severity, COLORS["warning"])
     return (
         f'<div style="background:#fff;border:1px solid {COLORS["border"]};border-left:4px solid {border};'
-        f'border-radius:8px;padding:14px 16px;margin-bottom:10px">'
+        f'border-radius:8px;padding:16px 18px;margin-bottom:10px;'
+        f'box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:all 0.15s ease;cursor:pointer" '
+        f'onmouseover="this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.06)\';this.style.transform=\'translateX(2px)\'" '
+        f'onmouseout="this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.04)\';this.style.transform=\'none\'">'
         f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
         f'<span style="font-weight:600;font-size:14px">{location}</span>'
         f'{status_pill_html(status)}</div>'
-        f'<div style="font-size:13px;color:{COLORS["text_secondary"]}">{detail}</div>'
+        f'<div style="font-size:13px;color:{COLORS["text_secondary"]};line-height:1.5">{detail}</div>'
         f'</div>'
     )
 
@@ -248,6 +251,18 @@ CUSTOM_CSS = """
 
 .stApp {
     font-family: 'Segoe UI', 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Gray background on main content area (match mockups) ── */
+.stApp,
+.stApp > header,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewContainer"] > section,
+[data-testid="stMain"],
+.main .block-container {
+    background-color: #f5f5f5 !important;
 }
 
 /* Override Streamlit default padding */
@@ -258,8 +273,12 @@ CUSTOM_CSS = """
 
 /* ── Sidebar Styling ──────────────────────────────────── */
 section[data-testid="stSidebar"] {
-    background: #ffffff;
+    background: #ffffff !important;
     border-right: 1px solid #edebe9;
+}
+
+section[data-testid="stSidebar"] > div {
+    background: #ffffff !important;
 }
 
 section[data-testid="stSidebar"] .stRadio > label {
@@ -274,6 +293,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .sparrow-card-header {
@@ -295,11 +315,13 @@ section[data-testid="stSidebar"] .stRadio > label {
     text-align: center;
     transition: all 0.15s ease;
     cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .stat-card:hover {
-    border-color: #0078d4;
-    box-shadow: 0 2px 8px rgba(0,120,212,0.12);
+    transform: translateY(-2px);
+    border-color: #d2d0ce;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* ── Buttons ──────────────────────────────────────────── */
@@ -324,12 +346,13 @@ section[data-testid="stSidebar"] .stRadio > label {
 /* ── Section Titles ───────────────────────────────────── */
 .section-title {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: #242424;
     margin-bottom: 14px;
     display: flex;
     align-items: center;
     gap: 8px;
+    letter-spacing: -0.2px;
 }
 
 .badge-count {
@@ -338,13 +361,14 @@ section[data-testid="stSidebar"] .stRadio > label {
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 10px;
-    font-weight: 600;
+    font-weight: 700;
+    line-height: 1.4;
 }
 
 /* ── Alert Ribbon ─────────────────────────────────────── */
 .alert-ribbon {
     background: #fff5f5;
-    border: 1px solid #fde7e9;
+    border: 1px solid #fecdd3;
     border-left: 4px solid #d13438;
     border-radius: 8px;
     padding: 14px 20px;
@@ -353,6 +377,12 @@ section[data-testid="stSidebar"] .stRadio > label {
     align-items: center;
     gap: 12px;
     font-size: 14px;
+    animation: fadeInDown 0.3s ease;
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .pulse-dot {
@@ -360,13 +390,13 @@ section[data-testid="stSidebar"] .stRadio > label {
     height: 8px;
     border-radius: 50%;
     background: #d13438;
-    animation: pulse 2s infinite;
+    animation: pulse-glow 2s infinite;
     flex-shrink: 0;
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+@keyframes pulse-glow {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(209, 52, 56, 0.4); }
+    50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(209, 52, 56, 0); }
 }
 
 /* ── Table Styling ────────────────────────────────────── */
@@ -374,6 +404,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     border: 1px solid #edebe9;
     border-radius: 8px;
     overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 /* ── Activity Feed ────────────────────────────────────── */
@@ -401,6 +432,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     overflow: hidden;
     margin-bottom: 24px;
     position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .hero-banner svg {
@@ -448,7 +480,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     border: none;
     font-size: 24px;
     cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0,120,212,0.4);
+    box-shadow: 0 4px 16px rgba(0,120,212,0.35), 0 2px 4px rgba(0,0,0,0.1);
     transition: all 0.2s ease;
     z-index: 9999;
     display: flex;
@@ -458,7 +490,7 @@ section[data-testid="stSidebar"] .stRadio > label {
 
 .ask-float-btn:hover {
     transform: scale(1.08);
-    box-shadow: 0 6px 20px rgba(0,120,212,0.5);
+    box-shadow: 0 6px 24px rgba(0,120,212,0.45), 0 3px 8px rgba(0,0,0,0.12);
 }
 
 /* ── Ask Panel ────────────────────────────────────────── */
@@ -471,7 +503,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     background: white;
     border: 1px solid #edebe9;
     border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.16);
     z-index: 9998;
     display: flex;
     flex-direction: column;
@@ -526,6 +558,7 @@ section[data-testid="stSidebar"] .stRadio > label {
 /* ── Tab styling ──────────────────────────────────────── */
 .stTabs [data-baseweb="tab-list"] {
     gap: 2px;
+    background: transparent;
 }
 
 .stTabs [data-baseweb="tab"] {
@@ -537,6 +570,23 @@ section[data-testid="stSidebar"] .stRadio > label {
 /* ── Manual override for multiselect to look cleaner ──── */
 .stMultiSelect {
     font-size: 13px;
+}
+
+/* ── Input controls on gray bg ────────────────────────── */
+.stTextInput > div > div,
+.stTextArea > div > div,
+.stSelectbox > div > div,
+.stMultiSelect > div > div {
+    background-color: #ffffff !important;
+    border-color: #edebe9 !important;
+}
+
+.stTextInput > div > div:focus-within,
+.stTextArea > div > div:focus-within,
+.stSelectbox > div > div:focus-within,
+.stMultiSelect > div > div:focus-within {
+    border-color: #0078d4 !important;
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.15) !important;
 }
 
 /* ── Timeline ─────────────────────────────────────────── */
@@ -551,6 +601,7 @@ section[data-testid="stSidebar"] .stRadio > label {
     border-radius: 8px;
     padding: 24px;
     margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .settings-card h4 {
@@ -559,6 +610,20 @@ section[data-testid="stSidebar"] .stRadio > label {
     color: #242424;
     margin-bottom: 16px;
 }
+
+/* ── Streamlit widget containers on gray bg ───────────── */
+[data-testid="stExpander"] {
+    background: #ffffff;
+    border: 1px solid #edebe9;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Scrollbar (global) ──────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d2d0ce; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a19f9d; }
 
 /* ── Timeline (Project Details) ──────────────────────── */
 .sparrow-timeline {
@@ -611,11 +676,12 @@ section[data-testid="stSidebar"] .stRadio > label {
     border: 1px solid #edebe9;
     border-radius: 8px;
     padding: 16px 20px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .tl-entry:hover .tl-card {
     border-color: #d2d0ce;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .tl-card-header {
     display: flex;

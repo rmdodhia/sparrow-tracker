@@ -181,10 +181,13 @@ if page == "Dashboard":
     for status, count in sorted_statuses:
         bar = bar_color_map.get(status, COLORS["neutral"])
         stat_html += (
-            f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+            f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
             f'padding:20px 20px 0;position:relative;overflow:hidden;'
-            f'transition:all 0.15s ease">'
-            f'<div style="font-size:32px;font-weight:700;letter-spacing:-1px;color:#242424">{count}</div>'
+            f'box-shadow:0 1px 2px rgba(0,0,0,0.04);'
+            f'transition:all 0.15s ease;cursor:pointer" '
+            f'onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.08)\';this.style.borderColor=\'#d2d0ce\'" '
+            f'onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.04)\';this.style.borderColor=\'#edebe9\'">'
+            f'<div style="font-size:32px;font-weight:700;letter-spacing:-1px;color:#242424;line-height:1.1">{count}</div>'
             f'<div style="font-size:13px;color:#616161;margin-top:4px;margin-bottom:16px;font-weight:500">{status}</div>'
             f'<div style="height:3px;margin:0 -20px;background:{bar}"></div>'
             f'</div>'
@@ -273,9 +276,10 @@ if page == "Dashboard":
     with right_col:
         # Activity Feed
         st.markdown(
-            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;overflow:hidden">'
-            '<div style="padding:14px 16px;border-bottom:1px solid #edebe9;font-size:14px;font-weight:600">'
-            'Recent Activity</div><div style="padding:0 16px;max-height:500px;overflow-y:auto">',
+            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);overflow:hidden;'
+            'box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
+            '<div style="padding:16px 20px;border-bottom:1px solid #edebe9;font-size:15px;font-weight:700;'
+            'color:#242424">Recent Activity</div><div style="padding:0 16px;max-height:500px;overflow-y:auto">',
             unsafe_allow_html=True,
         )
         history = get_recent_history(days=30, limit=15)
@@ -464,7 +468,7 @@ elif page == "Submit Update":
     with context_col:
         # Recently Updated feed
         st.markdown(
-            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;overflow:hidden">'
+            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);overflow:hidden">'
             '<div style="padding:14px 16px;border-bottom:1px solid #edebe9;font-size:14px;font-weight:600">'
             'Recently Updated</div><div style="padding:8px 16px">',
             unsafe_allow_html=True,
@@ -493,7 +497,7 @@ elif page == "Submit Update":
 
         # Quick tip
         st.markdown(
-            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
             'padding:16px;margin-top:12px">'
             '<div style="font-size:14px;font-weight:600;margin-bottom:8px">💡 Quick Tip</div>'
             '<div style="font-size:13px;color:#616161">You can forward emails to your configured '
@@ -601,7 +605,8 @@ elif page == "Project Details":
         target_sub_color = "#107c10" if "left" in target_sub else "#d13438" if "OVERDUE" in target_sub else "#616161"
 
         st.markdown(
-            f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;padding:24px 28px;margin-bottom:20px">'
+            f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:24px 28px;margin-bottom:20px;'
+            f'box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
             # Top: ID, Name, Status
             f'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">'
             f'<div>'
@@ -666,7 +671,8 @@ elif page == "Project Details":
                     f'padding:1px 6px;border-radius:3px;font-size:12.5px">{p["devops_id"]}</code></div></div>'
                 )
             st.markdown(
-                f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;padding:24px;margin-bottom:20px">'
+                f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:24px;margin-bottom:20px;'
+                f'box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
                 f'<div style="font-size:15px;font-weight:600;color:#242424;margin-bottom:16px">Project Information</div>'
                 f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">'
                 # Row 1: Deployment Type | Hardware
@@ -755,7 +761,7 @@ elif page == "Project Details":
             # Contacts
             project_contacts = get_contacts(pid)
             st.markdown(
-                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                 'padding:16px;margin-bottom:12px">'
                 '<div style="font-size:14px;font-weight:600;margin-bottom:10px">Contacts</div>',
                 unsafe_allow_html=True,
@@ -779,7 +785,7 @@ elif page == "Project Details":
             project_nudges = get_active_nudges(pid)
             if project_nudges:
                 st.markdown(
-                    '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                    '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                     'padding:16px;margin-bottom:12px">'
                     '<div style="font-size:14px;font-weight:600;margin-bottom:10px">Active Alerts</div>',
                     unsafe_allow_html=True,
@@ -796,7 +802,7 @@ elif page == "Project Details":
 
             # Quick Actions
             st.markdown(
-                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                 'padding:16px">'
                 '<div style="font-size:14px;font-weight:600;margin-bottom:10px">Quick Actions</div>',
                 unsafe_allow_html=True,
@@ -894,7 +900,7 @@ elif page == "Sprints":
                 pct = int(done_count / total * 100) if total else 0
 
                 st.markdown(
-                    f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                    f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                     f'padding:18px 22px;margin-bottom:16px">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between;'
                     f'flex-wrap:wrap;gap:8px;margin-bottom:14px">'
@@ -956,7 +962,7 @@ elif page == "Sprints":
                 done = sum(1 for i in items if i.get("state") in ("Done", "Closed"))
 
                 st.markdown(
-                    f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                    f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                     f'padding:16px 20px;margin-bottom:12px">'
                     f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
                     f'<div style="display:flex;align-items:center;gap:10px">'
@@ -1009,7 +1015,7 @@ elif page == "Sprints":
 
             # Build Gantt-style timeline using iteration date ranges
             today = date.today()
-            gantt_html = '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;padding:24px;overflow-x:auto">'
+            gantt_html = '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:24px;overflow-x:auto">'
             gantt_html += '<div style="font-size:15px;font-weight:600;color:#242424;margin-bottom:16px">Sprint Timeline</div>'
 
             # Only show iterations with dates
@@ -1106,7 +1112,7 @@ elif page == "Reports":
                 icon, title, desc = report_options[idx]
                 with cols[col_idx]:
                     st.markdown(
-                        f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;'
+                        f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
                         f'padding:20px;text-align:center;min-height:140px">'
                         f'<div style="font-size:28px;margin-bottom:8px">{icon}</div>'
                         f'<div style="font-size:14px;font-weight:600">{title}</div>'
@@ -1145,7 +1151,7 @@ elif page == "Reports":
         export_cols = st.columns(2)
         with export_cols[0]:
             st.markdown(
-                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;padding:20px">'
+                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:20px">'
                 '<div style="font-size:14px;font-weight:600">Projects CSV</div>'
                 '<div style="font-size:13px;color:#616161;margin:8px 0">Current state of all projects</div>'
                 '</div>',
@@ -1159,7 +1165,7 @@ elif page == "Reports":
 
         with export_cols[1]:
             st.markdown(
-                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;padding:20px">'
+                '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:20px">'
                 '<div style="font-size:14px;font-weight:600">History CSV</div>'
                 '<div style="font-size:13px;color:#616161;margin:8px 0">Full changelog of all updates</div>'
                 '</div>',
