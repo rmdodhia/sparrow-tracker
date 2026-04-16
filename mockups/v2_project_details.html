@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPARROW Tracker — Project Details — AF-DRC-SALO</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== RESET & BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body {
+    font-family: 'Segoe UI', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f5f5;
+    color: #242424;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ===== SIDEBAR ===== */
+  .sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: #ffffff;
+    border-right: 1px solid #edebe9;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 100;
+  }
+  .sidebar-brand {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #edebe9;
+  }
+  .sidebar-brand h1 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #242424;
+    letter-spacing: -0.3px;
+  }
+  .sidebar-brand h1 span { color: #0078d4; }
+  .sidebar-brand p {
+    font-size: 11px;
+    color: #616161;
+    margin-top: 2px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .sidebar-nav a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 24px;
+    color: #616161;
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+  }
+  .sidebar-nav a:hover {
+    background: #f5f5f5;
+    color: #242424;
+  }
+  .sidebar-nav a.active {
+    background: #eff6fc;
+    color: #0078d4;
+    border-left-color: #0078d4;
+    font-weight: 600;
+  }
+  .sidebar-nav a svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #edebe9;
+  }
+  .sidebar-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sidebar-avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: #0078d4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .sidebar-user-info { font-size: 12.5px; }
+  .sidebar-user-info .name { font-weight: 600; color: #242424; }
+  .sidebar-user-info .email { color: #616161; font-size: 11.5px; }
+
+  /* ===== MAIN CONTENT ===== */
+  .main {
+    margin-left: 260px;
+    flex: 1;
+    padding: 28px 32px 60px;
+    max-width: 1320px;
+  }
+
+  /* ===== BREADCRUMB ===== */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: #616161;
+    margin-bottom: 20px;
+  }
+  .breadcrumb a { color: #0078d4; text-decoration: none; }
+  .breadcrumb a:hover { text-decoration: underline; }
+  .breadcrumb .sep { color: #c8c6c4; }
+
+  /* ===== CARD BASE ===== */
+  .card {
+    background: #ffffff;
+    border: 1px solid #edebe9;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #242424;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title svg { width: 18px; height: 18px; color: #616161; }
+
+  /* ===== PROJECT HEADER CARD ===== */
+  .project-header { padding: 24px 28px; }
+  .project-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .project-header-left { display: flex; flex-direction: column; gap: 6px; }
+  .project-id-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .project-code {
+    font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+    color: #0078d4;
+    background: #eff6fc;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .project-name {
+    font-size: 26px;
+    font-weight: 700;
+    color: #242424;
+    letter-spacing: -0.5px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .status-pill.purple {
+    background: rgba(92, 45, 145, 0.1);
+    color: #5c2d91;
+  }
+  .status-pill.green {
+    background: rgba(16, 124, 16, 0.1);
+    color: #107c10;
+  }
+  .status-pill.orange {
+    background: rgba(247, 99, 12, 0.1);
+    color: #f7630c;
+  }
+  .status-pill::before {
+    content: '';
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .project-subtitle {
+    font-size: 13.5px;
+    color: #616161;
+    margin-top: 2px;
+  }
+  .project-header-actions {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: none;
+    font-family: inherit;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-outline {
+    background: #fff;
+    color: #242424;
+    border: 1px solid #d2d0ce;
+  }
+  .btn-outline:hover { background: #f5f5f5; border-color: #c8c6c4; }
+  .btn-primary {
+    background: #0078d4;
+    color: #ffffff;
+  }
+  .btn-primary:hover { background: #106ebe; }
+  .btn-sm { padding: 6px 14px; font-size: 12.5px; }
+
+  /* Metric boxes */
+  .metrics-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-top: 20px;
+    border-top: 1px solid #edebe9;
+    padding-top: 20px;
+  }
+  .metric-box {
+    padding: 0 20px;
+    border-right: 1px solid #edebe9;
+  }
+  .metric-box:first-child { padding-left: 0; }
+  .metric-box:last-child { border-right: none; }
+  .metric-label {
+    font-size: 11.5px;
+    color: #616161;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .metric-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #242424;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .metric-value .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #0078d4;
+    flex-shrink: 0;
+  }
+  .metric-sub {
+    font-size: 12px;
+    color: #616161;
+    margin-top: 3px;
+  }
+  .metric-sub.green { color: #107c10; font-weight: 500; }
+
+  /* ===== TWO COLUMN LAYOUT ===== */
+  .two-col {
+    display: grid;
+    grid-template-columns: 62fr 38fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  /* ===== PROJECT INFORMATION ===== */
+  .info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .info-item {
+    padding: 14px 0;
+    border-bottom: 1px solid #f3f2f1;
+  }
+  .info-item:nth-child(odd) { padding-right: 20px; }
+  .info-item:nth-child(even) { padding-left: 20px; border-left: 1px solid #f3f2f1; }
+  .info-item.full-width {
+    grid-column: 1 / -1;
+    padding-left: 0;
+    padding-right: 0;
+    border-left: none;
+  }
+  .info-label {
+    font-size: 11.5px;
+    color: #616161;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .info-value {
+    font-size: 13.5px;
+    color: #242424;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .info-value.blocker {
+    color: #d13438;
+    font-weight: 500;
+  }
+  .info-value.note {
+    color: #424242;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  .info-value code {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    background: #f5f5f5;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12.5px;
+  }
+
+  /* ===== HISTORY / TIMELINE ===== */
+  .history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .history-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .history-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #242424;
+    letter-spacing: -0.2px;
+  }
+  .history-count {
+    font-size: 12px;
+    color: #616161;
+    font-weight: 400;
+  }
+  .filter-chips {
+    display: flex;
+    gap: 6px;
+  }
+  .chip {
+    padding: 5px 14px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid #d2d0ce;
+    background: #fff;
+    color: #616161;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+  .chip:hover { border-color: #0078d4; color: #0078d4; }
+  .chip.active {
+    background: #0078d4;
+    color: #fff;
+    border-color: #0078d4;
+  }
+
+  /* Timeline container */
+  .timeline {
+    position: relative;
+    padding-left: 36px;
+  }
+  /* The vertical line */
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 11px;
+    top: 8px;
+    bottom: 40px;
+    width: 2px;
+    background: linear-gradient(to bottom, #e1dfdd 0%, #e1dfdd 85%, transparent 100%);
+    border-radius: 1px;
+  }
+
+  /* Timeline entry */
+  .timeline-entry {
+    position: relative;
+    margin-bottom: 4px;
+    animation: fadeSlideIn 0.3s ease both;
+  }
+  .timeline-entry:nth-child(1) { animation-delay: 0s; }
+  .timeline-entry:nth-child(2) { animation-delay: 0.05s; }
+  .timeline-entry:nth-child(3) { animation-delay: 0.1s; }
+  .timeline-entry:nth-child(4) { animation-delay: 0.15s; }
+  .timeline-entry:nth-child(5) { animation-delay: 0.2s; }
+  .timeline-entry:nth-child(6) { animation-delay: 0.25s; }
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* The dot on the timeline */
+  .timeline-dot {
+    position: absolute;
+    left: -36px;
+    top: 22px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .timeline-entry:hover .timeline-dot {
+    transform: scale(1.15);
+  }
+  .timeline-dot .dot-inner {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    position: relative;
+  }
+  .timeline-dot.blue { background: rgba(0, 120, 212, 0.12); }
+  .timeline-dot.blue .dot-inner { background: #0078d4; }
+  .timeline-dot.green { background: rgba(16, 124, 16, 0.12); }
+  .timeline-dot.green .dot-inner { background: #107c10; }
+  .timeline-dot.purple { background: rgba(92, 45, 145, 0.12); }
+  .timeline-dot.purple .dot-inner { background: #5c2d91; }
+  .timeline-dot.orange { background: rgba(247, 99, 12, 0.12); }
+  .timeline-dot.orange .dot-inner { background: #f7630c; }
+
+  /* Pulse animation on the most recent entry */
+  .timeline-entry:first-child .timeline-dot .dot-inner::after {
+    content: '';
+    position: absolute;
+    top: -3px; left: -3px; right: -3px; bottom: -3px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    opacity: 0;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  .timeline-dot.green .dot-inner::after { border-color: #107c10; }
+  @keyframes pulse {
+    0%, 100% { opacity: 0; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.5); }
+  }
+
+  /* Timeline card */
+  .timeline-card {
+    background: #ffffff;
+    border: 1px solid #edebe9;
+    border-radius: 8px;
+    padding: 16px 20px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    cursor: default;
+  }
+  .timeline-entry:hover .timeline-card {
+    border-color: #d2d0ce;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+  .timeline-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .timeline-time {
+    font-size: 12px;
+    color: #616161;
+    font-weight: 500;
+    min-width: 80px;
+  }
+  .source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }
+  .source-badge.email { background: #e6f4e6; color: #107c10; }
+  .source-badge.manual { background: #eff6fc; color: #0078d4; }
+  .source-badge.system { background: #f0e6f6; color: #5c2d91; }
+  .source-badge.teams { background: #fff4ec; color: #f7630c; }
+  .source-badge svg { width: 12px; height: 12px; }
+  .timeline-author {
+    font-size: 12px;
+    color: #616161;
+  }
+  .timeline-author strong { color: #242424; font-weight: 600; }
+  .timeline-summary {
+    font-size: 13.5px;
+    color: #242424;
+    margin-top: 8px;
+    line-height: 1.55;
+    font-weight: 500;
+  }
+
+  /* Expand/collapse toggle */
+  .timeline-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #0078d4;
+    cursor: pointer;
+    margin-top: 10px;
+    font-weight: 500;
+    background: none;
+    border: none;
+    padding: 4px 0;
+    font-family: inherit;
+    transition: color 0.15s ease;
+  }
+  .timeline-toggle:hover { color: #106ebe; }
+  .timeline-toggle svg {
+    width: 14px; height: 14px;
+    transition: transform 0.25s ease;
+  }
+  .timeline-toggle.expanded svg {
+    transform: rotate(180deg);
+  }
+
+  /* Expandable details */
+  .timeline-details {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.25s ease;
+    opacity: 0;
+    margin-top: 0;
+  }
+  .timeline-details.open {
+    max-height: 500px;
+    opacity: 1;
+    margin-top: 14px;
+  }
+  .field-changes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .field-change {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    flex-wrap: wrap;
+  }
+  .field-name {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 11.5px;
+    color: #616161;
+    background: #f5f5f5;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  .field-old {
+    text-decoration: line-through;
+    color: #a19f9d;
+    font-size: 12.5px;
+  }
+  .field-arrow {
+    color: #c8c6c4;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .field-new {
+    color: #107c10;
+    font-weight: 600;
+    font-size: 12.5px;
+  }
+  .original-source {
+    background: #faf9f8;
+    border-left: 3px solid #e1dfdd;
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12.5px;
+    color: #616161;
+    line-height: 1.6;
+    font-style: italic;
+  }
+  .original-source-label {
+    font-size: 10.5px;
+    color: #a19f9d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-style: normal;
+  }
+
+  .nudge-note {
+    background: #faf9f8;
+    border-left: 3px solid #5c2d91;
+    padding: 10px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 12.5px;
+    color: #616161;
+    line-height: 1.5;
+  }
+
+  .load-more {
+    text-align: center;
+    padding: 16px 0 4px;
+    position: relative;
+  }
+  .load-more a {
+    font-size: 13px;
+    color: #0078d4;
+    text-decoration: none;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .load-more a:hover { text-decoration: underline; }
+
+  /* ===== CONTACTS CARD ===== */
+  .contact-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid #f3f2f1;
+  }
+  .contact-item:last-of-type { border-bottom: none; }
+  .contact-avatar {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .contact-info { flex: 1; }
+  .contact-name { font-size: 13.5px; font-weight: 600; color: #242424; }
+  .contact-role { font-size: 12px; color: #616161; }
+  .contact-email {
+    font-size: 12px;
+    color: #0078d4;
+    text-decoration: none;
+  }
+  .contact-email:hover { text-decoration: underline; }
+  .add-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: #0078d4;
+    text-decoration: none;
+    font-weight: 500;
+    margin-top: 12px;
+    cursor: pointer;
+  }
+  .add-link:hover { text-decoration: underline; }
+  .add-link svg { width: 16px; height: 16px; }
+
+  /* ===== ALERT CARD ===== */
+  .alert-item {
+    border-left: 4px solid #f7630c;
+    background: #fff9f5;
+    border-radius: 0 6px 6px 0;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .alert-icon {
+    width: 22px; height: 22px;
+    color: #f7630c;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .alert-content { flex: 1; }
+  .alert-type {
+    font-size: 11px;
+    font-weight: 700;
+    color: #f7630c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .alert-text {
+    font-size: 13px;
+    color: #242424;
+    line-height: 1.5;
+  }
+
+  /* ===== QUICK ACTIONS CARD ===== */
+  .quick-actions { display: flex; flex-direction: column; gap: 10px; }
+  .quick-actions .btn-primary { width: 100%; justify-content: center; padding: 10px 18px; }
+  .quick-action-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #0078d4;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .quick-action-link:hover { text-decoration: underline; }
+  .quick-action-link svg { width: 16px; height: 16px; }
+
+  /* ===== FLOATING ASK BUTTON ===== */
+  .fab {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #0078d4;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(0, 120, 212, 0.35), 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    z-index: 1000;
+  }
+  .fab:hover {
+    transform: scale(1.08);
+    box-shadow: 0 6px 24px rgba(0, 120, 212, 0.45), 0 3px 8px rgba(0, 0, 0, 0.12);
+  }
+  .fab svg { width: 24px; height: 24px; }
+
+  /* ===== SCROLLBAR ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #d2d0ce; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a19f9d; }
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <h1><span>SPARROW</span> Tracker</h1>
+    <p>Conservation Deployments</p>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="#">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      Submit Update
+    </a>
+    <a href="#" class="active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      Project Details
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Reports
+    </a>
+    <a href="#">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Settings
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="sidebar-avatar">RD</div>
+      <div class="sidebar-user-info">
+        <div class="name">Rahul Dodhia</div>
+        <div class="email">radodhia@microsoft.com</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main">
+
+  <!-- Breadcrumb -->
+  <div class="breadcrumb">
+    <a href="#">Dashboard</a>
+    <span class="sep">/</span>
+    <a href="#">Projects</a>
+    <span class="sep">/</span>
+    <span>AF-DRC-SALO</span>
+  </div>
+
+  <!-- ===== 1. PROJECT HEADER CARD ===== -->
+  <div class="card project-header">
+    <div class="project-header-top">
+      <div class="project-header-left">
+        <div class="project-id-row">
+          <span class="project-code">AF-DRC-SALO</span>
+          <span class="project-name">Salonga, DRC</span>
+          <span class="status-pill purple">Shipping</span>
+        </div>
+        <div class="project-subtitle">WWF &middot; Democratic Republic of Congo &middot; Africa</div>
+      </div>
+      <div class="project-header-actions">
+        <button class="btn btn-outline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit
+        </button>
+        <button class="btn btn-outline">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Generate Report
+        </button>
+      </div>
+    </div>
+    <div class="metrics-row">
+      <div class="metric-box">
+        <div class="metric-label">Owner</div>
+        <div class="metric-value">
+          <span class="dot"></span>
+          Bruno
+        </div>
+        <div class="metric-sub">Project lead</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Target Date</div>
+        <div class="metric-value">2026-06-30</div>
+        <div class="metric-sub green">75 days left</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Estimated Cost</div>
+        <div class="metric-value">$12,500</div>
+        <div class="metric-sub">USD</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Last Updated</div>
+        <div class="metric-value">2 hours ago</div>
+        <div class="metric-sub">by Bruno</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 2. TWO-COLUMN ===== -->
+  <div class="two-col">
+
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- Project Information -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          Project Information
+        </div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Deployment Type</div>
+            <div class="info-value">Solar Sparrow</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Hardware</div>
+            <div class="info-value">Sparrow v2.1</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Timeline</div>
+            <div class="info-value">Before End FY26</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Confidence</div>
+            <div class="info-value">Committed</div>
+          </div>
+          <div class="info-item full-width">
+            <div class="info-label">Blocker</div>
+            <div class="info-value blocker">Awaiting customs clearance in Kinshasa</div>
+          </div>
+          <div class="info-item full-width">
+            <div class="info-label">Notes</div>
+            <div class="info-value note">"Paulo confirmed shipment arrived. Battery included. Local transport arranged."</div>
+          </div>
+          <div class="info-item full-width" style="border-bottom: none;">
+            <div class="info-label">DevOps ID</div>
+            <div class="info-value"><code>4521</code></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- History Section -->
+      <div class="card" style="padding-bottom: 20px;">
+        <div class="history-header">
+          <div class="history-header-left">
+            <span class="history-title">History</span>
+            <span class="history-count">(12 entries)</span>
+          </div>
+          <div class="filter-chips">
+            <button class="chip active">All</button>
+            <button class="chip">Email</button>
+            <button class="chip">Manual</button>
+            <button class="chip">System</button>
+          </div>
+        </div>
+
+        <div class="timeline">
+
+          <!-- Entry 1 — Email (green) — 2h ago — EXPANDED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot green"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">2 hours ago</span>
+                <span class="source-badge email">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  Email
+                </span>
+                <span class="timeline-author">by <strong>Bruno</strong></span>
+              </div>
+              <div class="timeline-summary">Shipment arrived in Kinshasa, awaiting customs clearance</div>
+              <button class="timeline-toggle expanded" onclick="toggleDetails(this)">
+                Hide details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details open">
+                <div class="field-changes">
+                  <div class="field-change">
+                    <span class="field-name">status</span>
+                    <span class="field-old">Procurement</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">Shipping</span>
+                  </div>
+                  <div class="field-change">
+                    <span class="field-name">blocker</span>
+                    <span class="field-old">none</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">"Awaiting customs clearance"</span>
+                  </div>
+                </div>
+                <div class="original-source">
+                  <div class="original-source-label">Original email</div>
+                  "Hi team, the shipment has arrived in Kinshasa. We are currently awaiting customs clearance which may take a few days. Paulo is coordinating with the local customs office. Will update once cleared. - Bruno"
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry 2 — Manual (blue) — 5 days ago — EXPANDED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot blue"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">5 days ago</span>
+                <span class="source-badge manual">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Manual
+                </span>
+                <span class="timeline-author">by <strong>Bruno</strong></span>
+              </div>
+              <div class="timeline-summary">Paulo confirmed battery included in shipment</div>
+              <button class="timeline-toggle expanded" onclick="toggleDetails(this)">
+                Hide details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details open">
+                <div class="field-changes">
+                  <div class="field-change">
+                    <span class="field-name">notes</span>
+                    <span style="font-size:12.5px; color: #616161; font-style:italic;">updated</span>
+                  </div>
+                  <div class="field-change">
+                    <span class="field-name">hardware</span>
+                    <span class="field-old">Sparrow v2.0</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">Sparrow v2.1</span>
+                  </div>
+                </div>
+                <div class="original-source">
+                  <div class="original-source-label">Manual entry</div>
+                  "Spoke with Paulo on call. He confirmed the battery unit is included in the current shipment. Hardware version updated to v2.1 as the latest revision was shipped."
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry 3 — System (purple) — 12 days ago — COLLAPSED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot purple"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">12 days ago</span>
+                <span class="source-badge system">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  System
+                </span>
+              </div>
+              <div class="timeline-summary">Monitor: approaching FY26 deadline (75 days)</div>
+              <button class="timeline-toggle" onclick="toggleDetails(this)">
+                Show details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details">
+                <div class="nudge-note">
+                  Automated nudge generated. No field changes. The system detected that the project target date is within 90 days and flagged it for follow-up.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry 4 — Teams (orange) — 3 weeks ago — COLLAPSED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot orange"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">3 weeks ago</span>
+                <span class="source-badge teams">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  Teams
+                </span>
+                <span class="timeline-author">by <strong>Carl</strong></span>
+              </div>
+              <div class="timeline-summary">Procurement complete, shipment scheduled for April 1</div>
+              <button class="timeline-toggle" onclick="toggleDetails(this)">
+                Show details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details">
+                <div class="field-changes">
+                  <div class="field-change">
+                    <span class="field-name">status</span>
+                    <span class="field-old">Approved</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">Procurement</span>
+                  </div>
+                  <div class="field-change">
+                    <span class="field-name">timeline_label</span>
+                    <span class="field-old">Q3 FY26</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">Before End FY26</span>
+                  </div>
+                </div>
+                <div class="original-source">
+                  <div class="original-source-label">Teams message</div>
+                  "Good news everyone - procurement is finalized. Shipment is scheduled to leave on April 1st. Updated the timeline accordingly. - Carl"
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry 5 — Manual (blue) — 6 weeks ago — COLLAPSED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot blue"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">6 weeks ago</span>
+                <span class="source-badge manual">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Manual
+                </span>
+                <span class="timeline-author">by <strong>Rahul</strong></span>
+              </div>
+              <div class="timeline-summary">Partner agreement signed with WWF-DRC</div>
+              <button class="timeline-toggle" onclick="toggleDetails(this)">
+                Show details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details">
+                <div class="field-changes">
+                  <div class="field-change">
+                    <span class="field-name">status</span>
+                    <span class="field-old">Scoping</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">Approved</span>
+                  </div>
+                  <div class="field-change">
+                    <span class="field-name">partner_org</span>
+                    <span class="field-old">WWF (pending)</span>
+                    <span class="field-arrow">&rarr;</span>
+                    <span class="field-new">WWF</span>
+                  </div>
+                </div>
+                <div class="original-source">
+                  <div class="original-source-label">Manual entry</div>
+                  "Partner agreement with WWF-DRC has been signed and countersigned. All approvals in place. Moving project to Approved status. - Rahul"
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Entry 6 — Manual (blue) — 3 months ago — COLLAPSED -->
+          <div class="timeline-entry">
+            <div class="timeline-dot blue"><div class="dot-inner"></div></div>
+            <div class="timeline-card">
+              <div class="timeline-card-header">
+                <span class="timeline-time">3 months ago</span>
+                <span class="source-badge manual">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Manual
+                </span>
+                <span class="timeline-author">by <strong>Rahul</strong></span>
+              </div>
+              <div class="timeline-summary">Initial scoping for Salonga deployment</div>
+              <button class="timeline-toggle" onclick="toggleDetails(this)">
+                Show details
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="timeline-details">
+                <div class="field-changes">
+                  <div class="field-change">
+                    <span class="field-name">status</span>
+                    <span style="font-size: 12.5px; color: #616161;">created as</span>
+                    <span class="field-new">Scoping</span>
+                  </div>
+                </div>
+                <div class="original-source">
+                  <div class="original-source-label">Manual entry</div>
+                  "Creating project record for new deployment opportunity in Salonga National Park, DRC. Partner: WWF (pending agreement). Initial contact made through Paulo at WWF-DRC regional office. - Rahul"
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /timeline -->
+
+        <div class="load-more">
+          <a href="#">Load more entries&hellip;</a>
+        </div>
+      </div>
+
+    </div><!-- /left-col -->
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- Contacts Card -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Contacts
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar" style="background: #0078d4;">P</div>
+          <div class="contact-info">
+            <div class="contact-name">Paulo</div>
+            <div class="contact-role">WWF-DRC &middot; Project contact</div>
+            <a class="contact-email" href="mailto:paulo@wwf.org">paulo@wwf.org</a>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar" style="background: #5c2d91;">M</div>
+          <div class="contact-info">
+            <div class="contact-name">Marie</div>
+            <div class="contact-role">WWF-DRC &middot; Logistics</div>
+            <a class="contact-email" href="mailto:marie@wwf.org">marie@wwf.org</a>
+          </div>
+        </div>
+        <a class="add-link" href="#">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Add contact
+        </a>
+      </div>
+
+      <!-- Active Alerts Card -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Active Alerts
+        </div>
+        <div class="alert-item">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="alert-content">
+            <div class="alert-type">Warning</div>
+            <div class="alert-text">Approaching deadline: 75 days to target date (2026-06-30)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Actions Card -->
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Quick Actions
+        </div>
+        <div class="quick-actions">
+          <button class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Submit update for this project
+          </button>
+          <a class="quick-action-link" href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            View in DevOps
+          </a>
+          <a class="quick-action-link" href="#">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export history
+          </a>
+        </div>
+      </div>
+
+    </div><!-- /right-col -->
+
+  </div><!-- /two-col -->
+
+</main>
+
+<!-- ===== FLOATING ASK BUTTON ===== -->
+<button class="fab" title="Ask SPARROW">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+</button>
+
+<!-- ===== JS ===== -->
+<script>
+function toggleDetails(btn) {
+  const details = btn.nextElementSibling;
+  const isOpen = details.classList.contains('open');
+
+  if (isOpen) {
+    details.classList.remove('open');
+    btn.classList.remove('expanded');
+    btn.innerHTML = 'Show details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  } else {
+    details.classList.add('open');
+    btn.classList.add('expanded');
+    btn.innerHTML = 'Hide details <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  }
+}
+
+// Filter chip toggle
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+  });
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPARROW Tracker — Option 4: Minimal / Notion-style</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #fff; color: #37352f; }
+
+  /* Sidebar */
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; width: 240px;
+    background: #fbfbfa; padding: 12px 0; display: flex; flex-direction: column;
+  }
+  .sidebar-brand {
+    padding: 8px 16px 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .sidebar-brand .icon { font-size: 22px; }
+  .sidebar-brand h1 { font-size: 15px; font-weight: 600; }
+  .sidebar nav { padding: 4px 8px; flex: 1; }
+  .sidebar nav a {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; color: #37352f; text-decoration: none;
+    font-size: 14px; border-radius: 4px; transition: background 0.1s;
+  }
+  .sidebar nav a:hover { background: #efefef; }
+  .sidebar nav a.active { background: #f1f1ef; font-weight: 500; }
+  .sidebar nav a .nav-icon { font-size: 15px; width: 22px; text-align: center; opacity: 0.7; }
+  .sidebar .divider { height: 1px; background: #e9e9e7; margin: 8px 16px; }
+  .sidebar-footer {
+    padding: 12px 16px; font-size: 12px; color: #9b9a97;
+  }
+
+  /* Main */
+  .main { margin-left: 240px; max-width: 960px; padding: 40px 48px; }
+
+  /* Page title */
+  .page-title {
+    font-size: 32px; font-weight: 700; margin-bottom: 4px; color: #37352f;
+  }
+  .page-sub { font-size: 14px; color: #9b9a97; margin-bottom: 32px; }
+
+  /* Callout */
+  .callout {
+    background: #fff3e2; border-radius: 4px; padding: 14px 16px;
+    margin-bottom: 28px; display: flex; align-items: flex-start; gap: 10px;
+    font-size: 14px; line-height: 1.5;
+  }
+  .callout .ico { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+
+  /* Inline database header */
+  .db-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 4px;
+  }
+  .db-header h2 { font-size: 18px; font-weight: 600; }
+  .db-actions { display: flex; gap: 6px; }
+  .db-actions button {
+    padding: 4px 10px; border: none; background: transparent;
+    color: #9b9a97; font-size: 13px; cursor: pointer; border-radius: 3px;
+    font-family: inherit;
+  }
+  .db-actions button:hover { background: #f1f1ef; color: #37352f; }
+
+  /* Stat blocks */
+  .stat-blocks {
+    display: flex; gap: 0; border: 1px solid #e9e9e7; border-radius: 6px;
+    margin-bottom: 28px; overflow: hidden;
+  }
+  .stat-block {
+    flex: 1; padding: 16px 18px; cursor: pointer;
+    border-right: 1px solid #e9e9e7; transition: background 0.1s;
+  }
+  .stat-block:last-child { border-right: none; }
+  .stat-block:hover { background: #fbfbfa; }
+  .stat-block.active { background: #f1f1ef; }
+  .stat-block .sb-count { font-size: 24px; font-weight: 700; color: #37352f; }
+  .stat-block .sb-label { font-size: 12px; color: #9b9a97; margin-top: 2px; }
+  .stat-block .sb-bar { height: 3px; border-radius: 2px; margin-top: 10px; }
+
+  /* Attention toggle list */
+  .toggle-section { margin-bottom: 28px; }
+  .toggle-header {
+    display: flex; align-items: center; gap: 8px; padding: 8px 0;
+    cursor: pointer; font-size: 14px; font-weight: 500;
+    border-bottom: 1px solid #e9e9e7;
+  }
+  .toggle-header .arrow { color: #9b9a97; font-size: 12px; }
+  .toggle-header .cnt { color: #9b9a97; font-weight: 400; }
+  .toggle-items { padding: 4px 0; }
+  .toggle-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 0 8px 20px; font-size: 14px;
+    border-bottom: 1px solid #f5f5f4;
+  }
+  .toggle-item:last-child { border-bottom: none; }
+  .ti-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .ti-red { background: #e03e3e; }
+  .ti-orange { background: #d9730d; }
+  .ti-blue { background: #337ea9; }
+  .ti-body { flex: 1; }
+  .ti-body .ti-name { font-weight: 500; }
+  .ti-body .ti-desc { font-size: 12px; color: #9b9a97; margin-top: 1px; }
+  .ti-tag {
+    padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500;
+  }
+  .tag-red { background: #fbe4e4; color: #e03e3e; }
+  .tag-orange { background: #fbecdb; color: #d9730d; }
+  .tag-blue { background: #ddebf1; color: #337ea9; }
+
+  /* Table (Notion-style) */
+  .notion-table {
+    width: 100%; border-collapse: collapse; font-size: 14px;
+    border: 1px solid #e9e9e7; border-radius: 4px;
+  }
+  .notion-table th {
+    text-align: left; padding: 8px 12px; font-size: 12px; font-weight: 500;
+    color: #9b9a97; border-bottom: 1px solid #e9e9e7; background: #fbfbfa;
+  }
+  .notion-table td {
+    padding: 8px 12px; border-bottom: 1px solid #f5f5f4;
+  }
+  .notion-table tr:hover { background: #fbfbfa; }
+  .notion-table tr:last-child td { border-bottom: none; }
+  .prop-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 3px;
+    font-size: 12px; font-weight: 500;
+  }
+  .pt-green { background: #dbeddb; color: #0f7b0f; }
+  .pt-purple { background: #e8deee; color: #6940a5; }
+  .pt-gray { background: #e9e9e7; color: #6b6b6b; }
+  .pt-orange { background: #fbecdb; color: #d9730d; }
+  .pt-red { background: #fbe4e4; color: #e03e3e; }
+  .pt-blue { background: #ddebf1; color: #337ea9; }
+  .proj-link { color: #37352f; font-weight: 500; text-decoration: underline; text-decoration-color: #d3d1cb; text-underline-offset: 2px; }
+  .proj-link:hover { text-decoration-color: #37352f; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+  }
+  .filter-btn {
+    padding: 4px 10px; border: 1px solid #e9e9e7; border-radius: 4px;
+    background: #fff; font-size: 12px; color: #9b9a97; cursor: pointer;
+    font-family: inherit;
+  }
+  .filter-btn:hover { background: #f1f1ef; color: #37352f; }
+  .filter-search {
+    padding: 5px 10px; border: 1px solid #e9e9e7; border-radius: 4px;
+    font-size: 13px; width: 200px; font-family: inherit; margin-left: auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-brand">
+    <span class="icon">🐦</span>
+    <h1>SPARROW</h1>
+  </div>
+  <nav>
+    <a href="#" class="active"><span class="nav-icon">📊</span> Dashboard</a>
+    <a href="#"><span class="nav-icon">📝</span> Submit Update</a>
+    <a href="#"><span class="nav-icon">📧</span> Email Inbox</a>
+    <a href="#"><span class="nav-icon">💬</span> Ask a Question</a>
+  </nav>
+  <div class="divider"></div>
+  <nav>
+    <a href="#"><span class="nav-icon">📋</span> Project Details</a>
+    <a href="#"><span class="nav-icon">📈</span> Reports</a>
+    <a href="#"><span class="nav-icon">⚙️</span> Settings</a>
+  </nav>
+  <div class="sidebar-footer">
+    32 projects &middot; April 16, 2026
+  </div>
+</div>
+
+<div class="main">
+  <div class="page-title">Dashboard</div>
+  <div class="page-sub">SPARROW Installation Tracker &mdash; 32 projects across 6 continents</div>
+
+  <!-- Callout -->
+  <div class="callout">
+    <span class="ico">⚠️</span>
+    <div><strong>3 projects are overdue.</strong> Salonga Part 2 (42d stale), Gombe (battery issue), and Chile Base (thermal issues) need follow-up.</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stat-blocks">
+    <div class="stat-block">
+      <div class="sb-count">12</div>
+      <div class="sb-label">Scoping</div>
+      <div class="sb-bar" style="background: #e9e9e7; width: 60%;"></div>
+    </div>
+    <div class="stat-block active">
+      <div class="sb-count">7</div>
+      <div class="sb-label">Active</div>
+      <div class="sb-bar" style="background: #0f7b0f; width: 40%;"></div>
+    </div>
+    <div class="stat-block">
+      <div class="sb-count">4</div>
+      <div class="sb-label">Shipping</div>
+      <div class="sb-bar" style="background: #6940a5; width: 22%;"></div>
+    </div>
+    <div class="stat-block">
+      <div class="sb-count">5</div>
+      <div class="sb-label">Waiting</div>
+      <div class="sb-bar" style="background: #d9730d; width: 28%;"></div>
+    </div>
+    <div class="stat-block">
+      <div class="sb-count">4</div>
+      <div class="sb-label">At Risk</div>
+      <div class="sb-bar" style="background: #e03e3e; width: 22%;"></div>
+    </div>
+  </div>
+
+  <!-- Attention toggles -->
+  <div class="toggle-section">
+    <div class="toggle-header">
+      <span class="arrow">&#9662;</span> Needs Attention <span class="cnt">(4)</span>
+    </div>
+    <div class="toggle-items">
+      <div class="toggle-item">
+        <div class="ti-dot ti-red"></div>
+        <div class="ti-body">
+          <div class="ti-name">Salonga Part 2, DRC</div>
+          <div class="ti-desc">42 days since last update. May be descoped due to conflict.</div>
+        </div>
+        <span class="ti-tag tag-red">At Risk</span>
+      </div>
+      <div class="toggle-item">
+        <div class="ti-dot ti-orange"></div>
+        <div class="ti-body">
+          <div class="ti-name">Gombe, Tanzania</div>
+          <div class="ti-desc">Battery omitted from shipment. No firm timeline.</div>
+        </div>
+        <span class="ti-tag tag-orange">Waiting</span>
+      </div>
+      <div class="toggle-item">
+        <div class="ti-dot ti-blue"></div>
+        <div class="ti-body">
+          <div class="ti-name">Chile Base, Antarctica</div>
+          <div class="ti-desc">Paused until Water Sparrow is proven. Thermal issues.</div>
+        </div>
+        <span class="ti-tag tag-blue">On Hold</span>
+      </div>
+      <div class="toggle-item">
+        <div class="ti-dot ti-orange"></div>
+        <div class="ti-body">
+          <div class="ti-name">Headwater Streams, USA</div>
+          <div class="ti-desc">Waiting on ROBIN. 14 days to FY26 deadline.</div>
+        </div>
+        <span class="ti-tag tag-orange">Waiting</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="db-header">
+    <h2>All Projects</h2>
+    <div class="db-actions">
+      <button>Filter</button>
+      <button>Sort</button>
+      <button>Export</button>
+    </div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-btn">Status &#9662;</button>
+    <button class="filter-btn">Continent &#9662;</button>
+    <button class="filter-btn">Owner &#9662;</button>
+    <input class="filter-search" placeholder="Search..." />
+  </div>
+  <table class="notion-table">
+    <thead>
+      <tr><th>Project</th><th>Location</th><th>Partner</th><th>Status</th><th>Owner</th><th>Target</th><th>Cost</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a class="proj-link" href="#">AF-DRC-SALO</a></td>
+        <td>Salonga, DRC</td><td>WWF</td>
+        <td><span class="prop-tag pt-purple">Shipping</span></td>
+        <td>Bruno</td><td>2026-06-30</td><td>$12,500</td>
+      </tr>
+      <tr>
+        <td><a class="proj-link" href="#">AF-TZA-GOMB</a></td>
+        <td>Gombe, Tanzania</td><td>Jane Goodall Institute</td>
+        <td><span class="prop-tag pt-orange">Waiting</span></td>
+        <td>Carl</td><td>2026-06-30</td><td>$8,200</td>
+      </tr>
+      <tr>
+        <td><a class="proj-link" href="#">SA-BRA-AMAZ</a></td>
+        <td>Amazon Basin, Brazil</td><td>INPA</td>
+        <td><span class="prop-tag pt-green">Active</span></td>
+        <td>Miao</td><td>2026-03-15</td><td>$15,000</td>
+      </tr>
+      <tr>
+        <td><a class="proj-link" href="#">AS-IDN-INDO</a></td>
+        <td>Indonesia</td><td>Fauna & Flora</td>
+        <td><span class="prop-tag pt-gray">Scoping</span></td>
+        <td>--</td><td>--</td><td>TBD</td>
+      </tr>
+      <tr>
+        <td><a class="proj-link" href="#">AN-ANT-CHIL</a></td>
+        <td>Chile Base, Antarctica</td><td>INACH</td>
+        <td><span class="prop-tag pt-blue">On Hold</span></td>
+        <td>Rahul</td><td>2026-06-30</td><td>$22,000</td>
+      </tr>
+      <tr>
+        <td><a class="proj-link" href="#">EU-SCO-SCOT</a></td>
+        <td>Scotland</td><td>RSPB</td>
+        <td><span class="prop-tag pt-gray">Scoping</span></td>
+        <td>Manolo</td><td>--</td><td>TBD</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
