@@ -18,8 +18,9 @@ updates (emails, notes) into structured records.
   dates, and contacts, and asks you to confirm before saving.
 - **Project Details** — full history for one installation, editable fields,
   contacts, linked DevOps work items.
-- **Sprints** — Board / Person / Timeline views of Azure DevOps work items
-  pulled from the "AI For Good Lab" project (monthly sprints).
+- **Sprints** — Sprint Board and By Person views of Azure DevOps work items
+  pulled from the "AI For Good Lab" project. Sprints are grouped by each
+  item's `iteration_path` (monthly).
 - **Reports** — status breakdowns, stale-project nudges, deadline alerts.
 - **Settings** — DevOps sync, connection tests, team config.
 
@@ -109,7 +110,7 @@ streamlit run app.py
 | `AZURE_OPENAI_API_VERSION` | no | Defaults to `2024-10-21` |
 | `AZURE_DEVOPS_ORG` | no | Defaults to `onecela` |
 | `AZURE_DEVOPS_PROJECT` | no | Defaults to `AI For Good Lab` |
-| `AZURE_DEVOPS_PAT` | for sync | Personal Access Token with Work Items (Read) |
+| `AZURE_DEVOPS_PAT` | no | Optional PAT override. If unset, auth uses Entra ID via `DefaultAzureCredential` (run `az login` once on dev machines). |
 | `IMAP_HOST` / `_PORT` / `_USER` / `_PASS` | for email | Inbox that forwards updates |
 | `SPARROW_SMTP_*` | for nudges | Outgoing mail for staleness alerts |
 
@@ -124,7 +125,7 @@ SQLite file at the repo root. Tables:
 - `contacts` — partner contacts per project
 - `raw_inputs` — unparsed emails/notes before LLM extraction
 - `nudges` — active staleness and deadline alerts
-- `devops_work_items`, `devops_iterations` — DevOps sync cache
+- `devops_work_items` — DevOps sync cache (sprint = `iteration_path` field on each row)
 
 Schema lives in `db.py::init_db()`. It's idempotent — safe to re-run.
 

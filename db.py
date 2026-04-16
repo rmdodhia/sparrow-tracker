@@ -115,14 +115,6 @@ def init_db():
             FOREIGN KEY (linked_project_id) REFERENCES projects(project_id)
         );
 
-        CREATE TABLE IF NOT EXISTS devops_iterations (
-            id              TEXT PRIMARY KEY,
-            name            TEXT NOT NULL,
-            path            TEXT,
-            start_date      TEXT,
-            end_date        TEXT
-        );
-
         CREATE INDEX IF NOT EXISTS idx_wi_iteration ON devops_work_items(iteration_path);
         CREATE INDEX IF NOT EXISTS idx_wi_assigned ON devops_work_items(assigned_to);
         """)

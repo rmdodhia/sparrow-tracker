@@ -59,7 +59,13 @@ FY26_END = fy_end_date(26 + 2000)  # 2026-06-30
 AZURE_DEVOPS_ORG = os.environ.get("AZURE_DEVOPS_ORG", "onecela")
 AZURE_DEVOPS_PROJECT = os.environ.get("AZURE_DEVOPS_PROJECT", "AI For Good Lab")
 AZURE_DEVOPS_PAT = os.environ.get("AZURE_DEVOPS_PAT", "")
-DEVOPS_SEARCH_TERMS = ["sparrow", "pytorch wildlife", "condor", "owl"]
+DEVOPS_SEARCH_TERMS = ["sparrow", "pytorch wildlife", "condor", "robin"]
+
+# Saved query in the DevOps "My Queries" folder that returns active user stories
+# for the current sprint. Used for the sprint/board view.
+DEVOPS_SPRINT_QUERY_ID = os.environ.get(
+    "DEVOPS_SPRINT_QUERY_ID", "6f2ec623-1268-4b9e-9c13-996785b3961a"
+)
 
 # --- Email Ingestion (IMAP) ---
 IMAP_HOST = os.environ.get("IMAP_HOST", "")

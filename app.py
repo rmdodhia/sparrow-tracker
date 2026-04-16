@@ -29,7 +29,7 @@ from config import (
 from theme import (
     inject_theme, render_hero, render_floating_ask,
     status_pill_html, severity_badge_html, confidence_badge_html,
-    metric_card_html, attention_card_html, activity_item_html,
+    metric_card_html,
     timeline_entry_html, COLORS,
 )
 
@@ -59,11 +59,17 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    # Apply any pending navigation before the radio is instantiated.
+    # (Can't write to nav_page after the widget exists on the same run.)
+    if "_pending_nav" in st.session_state:
+        st.session_state["nav_page"] = st.session_state.pop("_pending_nav")
+
     page = st.radio(
         "Navigate",
         ["Dashboard", "Submit Update", "Project Details", "Sprints", "Reports", "Settings"],
         index=0,
         label_visibility="collapsed",
+        key="nav_page",
     )
 
     st.markdown("---")
@@ -96,16 +102,37 @@ with st.sidebar:
         st.session_state["ask_pending"] = True
         st.session_state["_last_ask"] = ask_input
 
-    # Process the question
+    # Process the input: may be a question OR an update (e.g. "assign Carl to Salonga").
     if st.session_state.get("ask_pending") and llm_available:
         question = st.session_state.get("ask_question", "")
         if question:
             with st.spinner("Thinking..."):
-                from llm import answer_question
-                answer = answer_question(question)
-            st.session_state["ask_answer"] = answer
+                from llm import parse_input, answer_question
+                parsed = parse_input(question, "Ask SPARROW")
+
+            intent = parsed.get("input_type", "question")
             st.session_state["ask_pending"] = False
-            add_raw_input(question, input_type="question")
+
+            if intent in ("update", "new_project") and parsed.get("proposed_changes"):
+                # Route through the Submit Update page so the user can review/approve
+                # using the existing confirmation UI.
+                st.session_state["pending_result"] = parsed
+                st.session_state["pending_text"] = question
+                st.session_state["pending_type"] = "ask_sparrow"
+                st.session_state["pending_by"] = "Ask SPARROW"
+                st.session_state["ask_answer"] = (
+                    "Proposed changes ready for review on the Submit Update page."
+                )
+                st.session_state["_pending_nav"] = "Submit Update"
+                add_raw_input(question, input_type="update")
+                st.rerun()
+            else:
+                # Either a question or an update that couldn't produce structured changes.
+                answer = parsed.get("question_answer")
+                if not answer:
+                    answer = answer_question(question)
+                st.session_state["ask_answer"] = answer
+                add_raw_input(question, input_type="question")
 
     if st.session_state.get("ask_answer"):
         st.markdown(
@@ -147,22 +174,52 @@ if page == "Dashboard":
     active = sum(1 for p in projects if p["status"] == "Active")
     render_hero(len(projects), continents, countries, active)
 
-    # ── Alert Ribbon ──────────────────────────────────────────────────────
+    # ── Needs Attention (collapsible, click an item to open it) ───────────
     stale = get_stale_projects()
     deadline = get_deadline_approaching()
     attention_items = stale + [d for d in deadline if d["project_id"] not in {s["project_id"] for s in stale}]
     overdue = [d for d in deadline if d.get("days_until_deadline", 1) <= 0]
 
-    if overdue:
-        names = ", ".join(d["location"][:25] for d in overdue[:3])
-        extra = f" and {len(overdue) - 3} more" if len(overdue) > 3 else ""
-        st.markdown(
-            f'<div class="alert-ribbon">'
-            f'<div class="pulse-dot"></div>'
-            f'<div><strong style="color:#d13438">{len(overdue)} project(s) overdue</strong> — '
-            f'{names}{extra} need attention.</div></div>',
-            unsafe_allow_html=True,
-        )
+    if attention_items:
+        expander_label = f"⚠️ Needs Attention ({len(attention_items)})"
+        if overdue:
+            expander_label = f"🚨 Needs Attention — {len(overdue)} overdue, {len(attention_items)} total"
+        with st.expander(expander_label, expanded=bool(overdue)):
+            for item in attention_items:
+                if "days_since_update" in item:
+                    detail = f"{item['days_since_update']}d since last update"
+                    sev_color = "#d13438" if item["days_since_update"] > 30 else "#ca5010"
+                else:
+                    d = item.get("days_until_deadline", 0)
+                    detail = f"OVERDUE by {-d}d" if d < 0 else f"{d}d to deadline"
+                    sev_color = "#d13438" if d <= 0 else ("#ca5010" if d <= 14 else "#8a8886")
+                blocker = item.get("blocker") or ""
+                row = st.columns([6, 2, 2, 2])
+                with row[0]:
+                    if st.button(
+                        f"{item['location']} · {item.get('country', '')}",
+                        key=f"attn_{item['project_id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["_pending_nav"] = "Project Details"
+                        st.session_state["_pending_project_pid"] = item["project_id"]
+                        st.rerun()
+                with row[1]:
+                    st.markdown(
+                        f'<div style="padding:8px 0;font-size:12px;color:#616161">{item["status"]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row[2]:
+                    st.markdown(
+                        f'<div style="padding:8px 0;font-size:12px;color:{sev_color};font-weight:600">{detail}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with row[3]:
+                    if blocker:
+                        st.markdown(
+                            f'<div style="padding:8px 0;font-size:11px;color:#8a8886" title="{blocker}">{blocker[:35]}{"…" if len(blocker) > 35 else ""}</div>',
+                            unsafe_allow_html=True,
+                        )
 
     # ── Stat Cards ────────────────────────────────────────────────────────
     summary = get_status_summary()
@@ -183,7 +240,6 @@ if page == "Dashboard":
         stat_html += (
             f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
             f'padding:20px 20px 0;position:relative;overflow:hidden;'
-            f'box-shadow:0 1px 2px rgba(0,0,0,0.04);'
             f'transition:all 0.15s ease;cursor:pointer" '
             f'onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.08)\';this.style.borderColor=\'#d2d0ce\'" '
             f'onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.04)\';this.style.borderColor=\'#edebe9\'">'
@@ -195,135 +251,132 @@ if page == "Dashboard":
     stat_html += '</div>'
     st.markdown(stat_html, unsafe_allow_html=True)
 
-    # ── Two-Column: Attention + Activity ──────────────────────────────────
-    left_col, right_col = st.columns([2, 1])
+    # ── All Projects Table ────────────────────────────────────────────────
+    st.markdown('<div class="section-title">All Projects</div>',
+                unsafe_allow_html=True)
 
-    with left_col:
-        # Needs Attention
-        if attention_items:
-            st.markdown(
-                f'<div class="section-title">Needs Attention '
-                f'<span class="badge-count">{len(attention_items)}</span></div>',
-                unsafe_allow_html=True,
-            )
-            for item in attention_items[:6]:
-                if "days_since_update" in item:
-                    detail = f"{item['days_since_update']} days since last update. {item.get('blocker') or ''}"
-                    sev = "danger" if item["days_since_update"] > 30 else "warning"
-                else:
-                    d = item.get("days_until_deadline", 0)
-                    detail = f"{'OVERDUE' if d < 0 else f'{d} days to deadline'}. {item.get('blocker') or ''}"
-                    sev = "danger" if d <= 0 else ("warning" if d <= 14 else "info")
+    filter_cols = st.columns(4)
+    with filter_cols[0]:
+        status_filter = st.multiselect("Status", VALID_STATUSES, default=[])
+    with filter_cols[1]:
+        continent_list = sorted(set(p["continent"] for p in projects))
+        continent_filter = st.multiselect("Continent", continent_list, default=[])
+    with filter_cols[2]:
+        owners = sorted(set(p.get("team_owner") or "Unassigned" for p in projects))
+        owner_filter = st.multiselect("Owner", owners, default=[])
+    with filter_cols[3]:
+        search = st.text_input("Search", "", label_visibility="visible")
+
+    filtered = projects
+    if status_filter:
+        filtered = [p for p in filtered if p["status"] in status_filter]
+    if continent_filter:
+        filtered = [p for p in filtered if p["continent"] in continent_filter]
+    if owner_filter:
+        filtered = [p for p in filtered if (p.get("team_owner") or "Unassigned") in owner_filter]
+    if search:
+        sl = search.lower()
+        filtered = [p for p in filtered if sl in json.dumps(p).lower()]
+
+    df = pd.DataFrame(filtered)
+    # Columns the user can edit directly in the grid. project_id and
+    # last_updated stay read-only so identity and audit fields aren't touched.
+    editable_cols = ["status", "team_owner", "target_date", "estimated_cost", "partner_org"]
+    display_cols = [
+        "project_id", "location", "partner_org",
+        "status", "team_owner", "target_date",
+        "estimated_cost", "last_updated",
+    ]
+    display_cols = [c for c in display_cols if c in df.columns]
+
+    if df.empty:
+        st.info("No projects match the current filters.")
+    else:
+        edit_col, save_col = st.columns([6, 1])
+        with save_col:
+            save_clicked = st.button("Save changes", type="primary", use_container_width=True)
+
+        owner_options = sorted(
+            {p.get("team_owner") for p in projects if p.get("team_owner")}
+            | set(TEAM_MEMBERS)
+        )
+
+        edited_df = st.data_editor(
+            df[display_cols],
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            disabled=[c for c in display_cols if c not in editable_cols],
+            key=f"dashboard_editor_{len(filtered)}",
+            column_config={
+                "project_id": st.column_config.TextColumn("ID", width="small"),
+                "location": st.column_config.TextColumn("Location"),
+                "partner_org": st.column_config.TextColumn("Partner"),
+                "status": st.column_config.SelectboxColumn(
+                    "Status", options=VALID_STATUSES, required=True
+                ),
+                "team_owner": st.column_config.SelectboxColumn(
+                    "Owner", options=owner_options
+                ),
+                "estimated_cost": st.column_config.NumberColumn("Cost (USD)", format="$%.0f"),
+                "target_date": st.column_config.TextColumn("Target Date", help="YYYY-MM-DD"),
+                "last_updated": st.column_config.TextColumn("Last Updated", disabled=True),
+            },
+        )
+
+        if save_clicked:
+            saved = 0
+            errors = []
+            orig_by_pid = {p["project_id"]: p for p in filtered}
+            for _, row in edited_df.iterrows():
+                pid = row["project_id"]
+                orig = orig_by_pid.get(pid)
+                if not orig:
+                    continue
+                updates = {}
+                for col in editable_cols:
+                    if col not in edited_df.columns:
+                        continue
+                    new_val = row[col]
+                    old_val = orig.get(col)
+                    # pandas hands us NaN for empty cells — normalize.
+                    if pd.isna(new_val):
+                        new_val = None
+                    if str(old_val or "") != str(new_val or ""):
+                        updates[col] = new_val
+                if not updates:
+                    continue
+                try:
+                    changes = update_project(pid, updates, "Dashboard edit")
+                    if changes:
+                        fields = ", ".join(changes.keys())
+                        add_history(
+                            pid, changes,
+                            source_text="Dashboard grid edit",
+                            source_type="manual",
+                            updated_by="Dashboard edit",
+                            llm_summary=f"Edited {fields} via Dashboard",
+                        )
+                        saved += 1
+                except Exception as e:
+                    errors.append(f"{pid}: {e}")
+
+            if saved:
+                st.success(f"Saved {saved} project(s).")
+            if errors:
+                st.error("Some rows failed:\n" + "\n".join(errors))
+            if saved and not errors:
+                st.rerun()
+
+    # ── Active Nudges ─────────────────────────────────────────────────────
+    nudges = get_active_nudges()
+    if nudges:
+        with st.expander(f"Active Nudges ({len(nudges)})"):
+            for n in nudges:
                 st.markdown(
-                    attention_card_html(item["location"], item["status"], detail.strip(), sev),
+                    f"{severity_badge_html(n['severity'])} **{n['project_id']}** — {n['message'][:150]}",
                     unsafe_allow_html=True,
                 )
-
-        # Project Table
-        st.markdown('<div class="section-title" style="margin-top:20px">All Projects</div>',
-                    unsafe_allow_html=True)
-
-        default_status = []
-        filter_cols = st.columns(4)
-        with filter_cols[0]:
-            status_filter = st.multiselect("Status", VALID_STATUSES, default=default_status)
-        with filter_cols[1]:
-            continent_list = sorted(set(p["continent"] for p in projects))
-            continent_filter = st.multiselect("Continent", continent_list, default=[])
-        with filter_cols[2]:
-            owners = sorted(set(p.get("team_owner") or "Unassigned" for p in projects))
-            owner_filter = st.multiselect("Owner", owners, default=[])
-        with filter_cols[3]:
-            search = st.text_input("Search", "", label_visibility="visible")
-
-        filtered = projects
-        if status_filter:
-            filtered = [p for p in filtered if p["status"] in status_filter]
-        if continent_filter:
-            filtered = [p for p in filtered if p["continent"] in continent_filter]
-        if owner_filter:
-            filtered = [p for p in filtered if (p.get("team_owner") or "Unassigned") in owner_filter]
-        if search:
-            sl = search.lower()
-            filtered = [p for p in filtered if sl in json.dumps(p).lower()]
-
-        df = pd.DataFrame(filtered)
-        display_cols = [
-            "project_id", "location", "partner_org",
-            "status", "team_owner", "target_date",
-            "estimated_cost", "last_updated",
-        ]
-        display_cols = [c for c in display_cols if c in df.columns]
-        if not df.empty:
-            st.dataframe(
-                df[display_cols],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "project_id": st.column_config.TextColumn("ID", width="small"),
-                    "location": st.column_config.TextColumn("Location"),
-                    "partner_org": st.column_config.TextColumn("Partner"),
-                    "status": st.column_config.TextColumn("Status"),
-                    "team_owner": st.column_config.TextColumn("Owner"),
-                    "estimated_cost": st.column_config.NumberColumn("Cost (USD)", format="$%.0f"),
-                    "target_date": st.column_config.TextColumn("Target Date"),
-                    "last_updated": st.column_config.TextColumn("Last Updated"),
-                },
-            )
-        else:
-            st.info("No projects match the current filters.")
-
-    with right_col:
-        # Activity Feed
-        st.markdown(
-            '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);overflow:hidden;'
-            'box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
-            '<div style="padding:16px 20px;border-bottom:1px solid #edebe9;font-size:15px;font-weight:700;'
-            'color:#242424">Recent Activity</div><div style="padding:0 16px;max-height:500px;overflow-y:auto">',
-            unsafe_allow_html=True,
-        )
-        history = get_recent_history(days=30, limit=15)
-        if history:
-            feed_html = ""
-            for h in history:
-                ts = h.get("timestamp", "")
-                try:
-                    dt = datetime.fromisoformat(ts)
-                    diff = datetime.utcnow() - dt
-                    if diff.days > 0:
-                        ago = f"{diff.days}d ago"
-                    elif diff.seconds > 3600:
-                        ago = f"{diff.seconds // 3600}h ago"
-                    else:
-                        ago = f"{diff.seconds // 60}m ago"
-                except (ValueError, TypeError):
-                    ago = ts
-                who = h.get("updated_by") or "System"
-                pid = h.get("project_id", "")
-                summary_text = h.get("llm_summary", "Update")
-                source = h.get("source_type", "manual")
-                feed_html += activity_item_html(
-                    ago,
-                    f"<strong>{who}</strong> updated <strong>{pid}</strong> — {summary_text[:80]}",
-                    source,
-                )
-            st.markdown(feed_html + '</div></div>', unsafe_allow_html=True)
-        else:
-            st.markdown(
-                '<div style="padding:16px;color:#8a8886;font-size:13px">No recent activity</div>'
-                '</div></div>',
-                unsafe_allow_html=True,
-            )
-
-        # Active Nudges
-        nudges = get_active_nudges()
-        if nudges:
-            with st.expander(f"Active Nudges ({len(nudges)})"):
-                for n in nudges:
-                    st.markdown(
-                        f"{severity_badge_html(n['severity'])} **{n['project_id']}** — {n['message'][:150]}",
-                        unsafe_allow_html=True,
-                    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -347,7 +400,7 @@ elif page == "Submit Update":
             "or plain English — the AI will figure out the rest.",
         )
 
-        if st.button("⚡ Process with AI", type="primary", disabled=not llm_available or not text.strip(),
+        if st.button("Send to SPARROW", type="primary", disabled=not llm_available or not text.strip(),
                       use_container_width=True):
             with st.spinner("Analyzing..."):
                 from llm import parse_input
@@ -478,7 +531,7 @@ elif page == "Submit Update":
             items_html = ""
             for h in recent:
                 pid = h.get("project_id", "")
-                summary_text = h.get("llm_summary", "Update")[:60]
+                summary_text = h.get("llm_summary") or "Update"[:60]
                 ts = h.get("timestamp", "")[:10]
                 items_html += (
                     f'<div style="padding:8px 0;border-bottom:1px solid #f3f2f1;font-size:13px">'
@@ -571,7 +624,19 @@ elif page == "Project Details":
 
     projects = get_all_projects()
     project_options = {f"{p['project_id']} — {p['location']} ({p['partner_org']})": p["project_id"] for p in projects}
-    selected = st.selectbox("Select a project", list(project_options.keys()))
+    options_list = list(project_options.keys())
+
+    # If navigated here via a Needs Attention click, pre-select that project.
+    if "_pending_project_pid" in st.session_state:
+        target_pid = st.session_state.pop("_pending_project_pid")
+        for label, pid in project_options.items():
+            if pid == target_pid:
+                st.session_state["project_details_select"] = label
+                break
+
+    selected = st.selectbox(
+        "Select a project", options_list, key="project_details_select"
+    )
 
     if selected:
         pid = project_options[selected]
@@ -652,6 +717,81 @@ elif page == "Project Details":
             f'</div></div>',
             unsafe_allow_html=True,
         )
+
+        # ── Edit Project ──────────────────────────────────────────────────
+        with st.expander("✏️ Edit project"):
+            e1, e2 = st.columns(2)
+            with e1:
+                ed_status = st.selectbox(
+                    "Status", VALID_STATUSES,
+                    index=VALID_STATUSES.index(p["status"]) if p.get("status") in VALID_STATUSES else 0,
+                    key=f"ed_status_{pid}",
+                )
+                ed_owner = st.selectbox(
+                    "Owner", [""] + TEAM_MEMBERS,
+                    index=(TEAM_MEMBERS.index(p["team_owner"]) + 1) if p.get("team_owner") in TEAM_MEMBERS else 0,
+                    key=f"ed_owner_{pid}",
+                )
+                ed_partner = st.text_input("Partner org", p.get("partner_org") or "", key=f"ed_partner_{pid}")
+                ed_deploy = st.text_input("Deployment type", p.get("deployment_type") or "", key=f"ed_deploy_{pid}")
+                ed_hardware = st.text_input("Hardware", p.get("hardware") or "", key=f"ed_hw_{pid}")
+            with e2:
+                ed_timeline = st.text_input("Timeline label", p.get("timeline_label") or "", key=f"ed_tl_{pid}")
+                ed_target = st.text_input("Target date (YYYY-MM-DD)", p.get("target_date") or "", key=f"ed_td_{pid}")
+                confidence_options = ["", "hard", "committed", "soft", "aspirational"]
+                cur_conf = p.get("target_confidence") or ""
+                ed_conf = st.selectbox(
+                    "Target confidence", confidence_options,
+                    index=confidence_options.index(cur_conf) if cur_conf in confidence_options else 0,
+                    key=f"ed_conf_{pid}",
+                )
+                ed_cost = st.number_input(
+                    "Estimated cost (USD)",
+                    value=float(p.get("estimated_cost") or 0.0),
+                    min_value=0.0, step=1000.0, format="%.0f",
+                    key=f"ed_cost_{pid}",
+                )
+            ed_blocker = st.text_input("Blocker", p.get("blocker") or "", key=f"ed_blk_{pid}")
+            ed_notes = st.text_area("Notes", p.get("notes") or "", height=100, key=f"ed_notes_{pid}")
+            ed_by = st.selectbox("Updated by", TEAM_MEMBERS + ["Other"], key=f"ed_by_{pid}")
+
+            if st.button("Save changes", type="primary", key=f"ed_save_{pid}"):
+                candidates = {
+                    "status": ed_status,
+                    "team_owner": ed_owner or None,
+                    "partner_org": ed_partner or None,
+                    "deployment_type": ed_deploy or None,
+                    "hardware": ed_hardware or None,
+                    "timeline_label": ed_timeline or None,
+                    "target_date": ed_target or None,
+                    "target_confidence": ed_conf or None,
+                    "estimated_cost": ed_cost if ed_cost > 0 else None,
+                    "blocker": ed_blocker or None,
+                    "notes": ed_notes or None,
+                }
+                updates = {}
+                for field, new_val in candidates.items():
+                    old_val = p.get(field)
+                    if str(old_val or "") != str(new_val or ""):
+                        updates[field] = new_val
+
+                if not updates:
+                    st.info("No changes detected.")
+                else:
+                    try:
+                        changes = update_project(pid, updates, ed_by)
+                        if changes:
+                            add_history(
+                                pid, changes,
+                                source_text="Project Details edit",
+                                source_type="manual",
+                                updated_by=ed_by,
+                                llm_summary=f"Edited {', '.join(changes.keys())} via Project Details",
+                            )
+                        st.success(f"Saved {len(updates)} field(s).")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Save failed: {e}")
 
         # ── Two Column: Info + History / Contacts + Actions ───────────────
         left_col, right_col = st.columns([2, 1])
@@ -821,7 +961,7 @@ elif page == "Project Details":
 
 elif page == "Sprints":
     from devops_sync import (
-        sync_all, get_iterations, get_work_items, get_work_items_by_sprint,
+        sync_all, get_work_items, get_work_items_by_sprint,
         get_work_items_by_person, get_last_sync_time,
     )
     from config import AZURE_DEVOPS_PAT, AZURE_DEVOPS_ORG, AZURE_DEVOPS_PROJECT
@@ -862,13 +1002,11 @@ elif page == "Sprints":
         st.warning("Azure DevOps PAT not configured. Add `AZURE_DEVOPS_PAT` to your `.env` file.")
 
     # ── View Tabs ────────────────────────────────────────────────────────
-    tab_board, tab_person, tab_timeline = st.tabs(["Sprint Board", "By Person", "Timeline"])
+    tab_board, tab_person = st.tabs(["Sprint Board", "By Person"])
 
     # ── Sprint Board ─────────────────────────────────────────────────────
     with tab_board:
         sprints_data = get_work_items_by_sprint()
-        iterations = get_iterations()
-        iter_map = {it["path"]: it for it in iterations}
 
         if not sprints_data:
             st.info("No work items found. Sync from Azure DevOps to populate.")
@@ -885,19 +1023,22 @@ elif page == "Sprints":
                 "Feature": "⭐", "Epic": "🏔️", "Issue": "⚠️",
             }
 
-            for sprint_path in sorted(sprints_data.keys(), reverse=True):
-                items = sprints_data[sprint_path]
-                sprint_name = sprint_path.split("\\")[-1] if "\\" in sprint_path else sprint_path
-                iter_info = iter_map.get(sprint_path, {})
-                date_range = ""
-                if iter_info.get("start_date") and iter_info.get("end_date"):
-                    start = iter_info["start_date"][:10]
-                    end = iter_info["end_date"][:10]
-                    date_range = f" · {start} → {end}"
+            def _sprint_sort_key(name: str):
+                # "April 2026" → parseable → sort by that date descending
+                # unparseable names (e.g. "Dec-Jan-25-26") → push below parsed ones
+                # "No sprint assigned" → push to the very bottom
+                from devops_sync import NO_SPRINT_LABEL
+                if name == NO_SPRINT_LABEL:
+                    return (0, date.min)
+                try:
+                    d = datetime.strptime(name, "%B %Y").date()
+                    return (2, d)
+                except ValueError:
+                    return (1, date.min)
 
-                done_count = sum(1 for i in items if i.get("state") in ("Done", "Closed"))
+            for sprint_name in sorted(sprints_data.keys(), key=_sprint_sort_key, reverse=True):
+                items = sprints_data[sprint_name]
                 total = len(items)
-                pct = int(done_count / total * 100) if total else 0
 
                 st.markdown(
                     f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
@@ -906,25 +1047,35 @@ elif page == "Sprints":
                     f'flex-wrap:wrap;gap:8px;margin-bottom:14px">'
                     f'<div>'
                     f'<span style="font-size:16px;font-weight:700;color:#242424">{sprint_name}</span>'
-                    f'<span style="font-size:12px;color:#616161;margin-left:8px">{date_range}</span>'
                     f'</div>'
                     f'<div style="display:flex;align-items:center;gap:12px">'
-                    f'<span style="font-size:12px;color:#616161">{done_count}/{total} done</span>'
-                    f'<div style="width:120px;height:6px;background:#f3f2f1;border-radius:3px;overflow:hidden">'
-                    f'<div style="width:{pct}%;height:100%;background:{COLORS["success"]};'
-                    f'border-radius:3px;transition:width 0.3s"></div></div>'
+                    f'<span style="font-size:12px;color:#616161">{total} open</span>'
                     f'</div></div>',
                     unsafe_allow_html=True,
                 )
 
+                # Items tagged as the sprint's "One Thing" go on top.
+                # Tag convention: "One Thing - <Month> FY<YY>" (e.g. "One Thing - April FY26").
+                one_thing_tag = ""
+                try:
+                    sprint_date = datetime.strptime(sprint_name, "%B %Y").date()
+                    one_thing_tag = f"One Thing - {sprint_date.strftime('%B')} FY{sprint_date.year % 100:02d}"
+                except ValueError:
+                    pass
+
+                def _item_sort(wi):
+                    is_one_thing = bool(one_thing_tag) and one_thing_tag in (wi.get("tags") or "")
+                    return (0 if is_one_thing else 1, wi.get("state", ""), wi.get("title", ""))
+
                 # Work items table
                 items_html = ""
-                for wi in sorted(items, key=lambda x: (x.get("state", ""), x.get("title", ""))):
+                for wi in sorted(items, key=_item_sort):
                     sc = state_colors.get(wi.get("state", ""), COLORS["neutral"])
                     icon = type_icons.get(wi.get("work_item_type", ""), "📋")
                     person = wi.get("assigned_to") or "Unassigned"
                     person_short = person.split(" ")[0] if person != "Unassigned" else person
                     tags = wi.get("tags") or ""
+                    is_one_thing = bool(one_thing_tag) and one_thing_tag in tags
                     tags_html = ""
                     if tags:
                         for tag in tags.split(";")[:3]:
@@ -935,10 +1086,13 @@ elif page == "Sprints":
                                     f'background:#f3f2f1;border-radius:3px;font-size:10px;'
                                     f'color:#616161;margin-left:4px">{tag}</span>'
                                 )
-                    wi_url = wi.get("url", "#")
+                    row_bg = "#fff8e1" if is_one_thing else "transparent"
+                    star = '<span title="One Thing" style="color:#f2c811">★</span>' if is_one_thing else '<span style="width:14px"></span>'
                     items_html += (
                         f'<div style="display:flex;align-items:center;gap:10px;'
-                        f'padding:8px 0;border-bottom:1px solid #f3f2f1;font-size:13px">'
+                        f'padding:8px 6px;border-bottom:1px solid #f3f2f1;font-size:13px;'
+                        f'background:{row_bg}">'
+                        f'{star}'
                         f'<span style="width:8px;height:8px;border-radius:50%;background:{sc};flex-shrink:0"></span>'
                         f'<span>{icon}</span>'
                         f'<span style="flex:1;font-weight:500;color:#242424">{wi["title"]}</span>'
@@ -992,96 +1146,6 @@ elif page == "Sprints":
                         unsafe_allow_html=True,
                     )
                 st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Timeline ─────────────────────────────────────────────────────────
-    with tab_timeline:
-        iterations = get_iterations()
-        all_work_items = get_work_items()
-
-        if not iterations:
-            st.info("No sprint data. Sync from Azure DevOps to see the timeline.")
-        else:
-            # Filter controls
-            tl_filter_cols = st.columns(3)
-            with tl_filter_cols[0]:
-                area_paths = sorted(set(wi.get("area_path", "") for wi in all_work_items if wi.get("area_path")))
-                area_filter = st.multiselect("Area", area_paths, default=[], key="tl_area")
-            with tl_filter_cols[1]:
-                people = sorted(set(wi.get("assigned_to", "") for wi in all_work_items if wi.get("assigned_to")))
-                person_filter = st.multiselect("Person", people, default=[], key="tl_person")
-            with tl_filter_cols[2]:
-                wi_types = sorted(set(wi.get("work_item_type", "") for wi in all_work_items if wi.get("work_item_type")))
-                type_filter = st.multiselect("Type", wi_types, default=[], key="tl_type")
-
-            # Build Gantt-style timeline using iteration date ranges
-            today = date.today()
-            gantt_html = '<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);padding:24px;overflow-x:auto">'
-            gantt_html += '<div style="font-size:15px;font-weight:600;color:#242424;margin-bottom:16px">Sprint Timeline</div>'
-
-            # Only show iterations with dates
-            dated_iters = [it for it in iterations if it.get("start_date") and it.get("end_date")]
-            dated_iters.sort(key=lambda x: x["start_date"])
-
-            if dated_iters:
-                for it in dated_iters:
-                    start_str = it["start_date"][:10]
-                    end_str = it["end_date"][:10]
-                    sprint_name = it["name"]
-                    try:
-                        start_d = date.fromisoformat(start_str)
-                        end_d = date.fromisoformat(end_str)
-                        is_current = start_d <= today <= end_d
-                        is_past = end_d < today
-                    except ValueError:
-                        is_current = False
-                        is_past = False
-
-                    # Count items in this sprint
-                    sprint_items = [wi for wi in all_work_items
-                                    if wi.get("iteration_path", "").endswith(sprint_name)]
-                    if area_filter:
-                        sprint_items = [wi for wi in sprint_items if wi.get("area_path") in area_filter]
-                    if person_filter:
-                        sprint_items = [wi for wi in sprint_items if wi.get("assigned_to") in person_filter]
-                    if type_filter:
-                        sprint_items = [wi for wi in sprint_items if wi.get("work_item_type") in type_filter]
-
-                    done = sum(1 for wi in sprint_items if wi.get("state") in ("Done", "Closed"))
-                    total = len(sprint_items)
-                    pct = int(done / total * 100) if total else 0
-
-                    border_color = COLORS["primary"] if is_current else (COLORS["border"] if not is_past else "#e1dfdd")
-                    bg = COLORS["primary_light"] if is_current else ("#faf9f8" if is_past else "#fff")
-                    bar_color = COLORS["success"] if pct == 100 else (COLORS["primary"] if is_current else COLORS["neutral"])
-                    badge = ""
-                    if is_current:
-                        badge = (
-                            f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
-                            f'font-size:10px;font-weight:700;background:{COLORS["primary"]};'
-                            f'color:#fff;margin-left:8px">CURRENT</span>'
-                        )
-
-                    gantt_html += (
-                        f'<div style="display:flex;align-items:center;gap:16px;padding:12px 16px;'
-                        f'border:1px solid {border_color};border-radius:6px;margin-bottom:8px;'
-                        f'background:{bg};transition:all 0.15s">'
-                        f'<div style="min-width:160px">'
-                        f'<div style="font-size:14px;font-weight:600;color:#242424">{sprint_name}{badge}</div>'
-                        f'<div style="font-size:11px;color:#616161;margin-top:2px">{start_str} → {end_str}</div>'
-                        f'</div>'
-                        f'<div style="flex:1;display:flex;align-items:center;gap:12px">'
-                        f'<div style="flex:1;height:8px;background:#f3f2f1;border-radius:4px;overflow:hidden">'
-                        f'<div style="width:{pct}%;height:100%;background:{bar_color};'
-                        f'border-radius:4px;transition:width 0.3s"></div></div>'
-                        f'<span style="font-size:12px;color:#616161;min-width:70px;text-align:right">'
-                        f'{done}/{total} done</span>'
-                        f'</div></div>'
-                    )
-            else:
-                gantt_html += '<div style="color:#8a8886;font-size:13px">No sprints with date ranges found.</div>'
-
-            gantt_html += '</div>'
-            st.markdown(gantt_html, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1267,22 +1331,28 @@ elif page == "Settings":
                 with st.spinner("Syncing from Azure DevOps..."):
                     try:
                         result = sync_all()
-                        st.success(f"Synced {result['iterations']} sprints, {result['work_items']} work items")
+                        st.success(
+                            f"Synced {result['work_items']} work items "
+                            f"({result['sprint_query']} in current sprint query)"
+                        )
                     except Exception as e:
                         st.error(f"Sync failed: {e}")
 
             if st.button("Test Connection", key="test_devops"):
                 try:
-                    from devops_sync import fetch_iterations
-                    iters = fetch_iterations()
-                    st.success(f"Connection OK — found {len(iters)} iterations")
+                    from devops_sync import fetch_work_item_ids
+                    ids = fetch_work_item_ids()
+                    st.success(f"Connection OK — {len(ids)} matching work items")
                 except Exception as e:
                     st.error(f"Connection failed: {e}")
         else:
-            st.warning("Not configured. Add your Azure DevOps PAT to `.env`.")
+            st.warning(
+                "Not configured. Either run `az login` or add `AZURE_DEVOPS_PAT` to `.env`."
+            )
 
         st.code(
-            "# Add to .env:\n"
+            "# Preferred: run `az login` — auth uses Entra ID.\n"
+            "# Fallback (PAT rotates weekly under Microsoft policy):\n"
             "AZURE_DEVOPS_PAT=your-personal-access-token\n"
             "AZURE_DEVOPS_ORG=onecela\n"
             "AZURE_DEVOPS_PROJECT=AI For Good Lab",
