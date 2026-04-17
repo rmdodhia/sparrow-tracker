@@ -7,7 +7,7 @@ Run:  streamlit run app.py
 import os
 import sys
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import streamlit as st
 import pandas as pd
@@ -20,11 +20,13 @@ from db import (
     add_contact, get_contacts, add_raw_input,
     get_active_nudges, get_status_summary,
     get_stale_projects, get_deadline_approaching,
+    get_timeline_rows,
 )
 from config import (
     VALID_STATUSES, CLOSED_STATUSES, TEAM_MEMBERS,
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT,
     STALENESS_THRESHOLDS, IMAP_HOST,
+    PHASE_STATUS_COLORS, PHASE_LIGHT_FILL_STATUSES,
 )
 from theme import (
     inject_theme, render_hero, render_floating_ask,
@@ -34,6 +36,122 @@ from theme import (
 )
 
 init_db()
+
+# ── Bulk Excel import/export helpers ──────────────────────────────────────────
+
+_BULK_EDITABLE_FIELDS = [
+    "continent", "country", "location", "partner_org",
+    "status", "team_owner", "target_date", "timeline_label",
+    "deployment_type", "hardware", "estimated_cost", "blocker", "notes",
+    "track_name",
+]
+_BULK_EXPORT_COLUMNS = ["project_id", "item_type"] + _BULK_EDITABLE_FIELDS
+
+
+def _bulk_norm(v):
+    """Normalize values for equality comparison between DB and uploaded cells."""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v != v:  # NaN
+        return ""
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    # Canonicalize numerics so 25000.0 and 25000 compare equal
+    # (openpyxl strips trailing zeros when Excel saves integers).
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float)):
+        return f"{float(v):g}"
+    return str(v).strip()
+
+
+def _export_projects_xlsx(projects: list) -> bytes:
+    import io
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "projects"
+    ws.append(_BULK_EXPORT_COLUMNS)
+    for p in projects:
+        ws.append([p.get(c) for c in _BULK_EXPORT_COLUMNS])
+    for col_idx, col_name in enumerate(_BULK_EXPORT_COLUMNS, 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(14, len(col_name) + 2)
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _parse_bulk_upload(uploaded_file):
+    """
+    Read the xlsx, diff rows against current DB state, return (diff, errors).
+      diff: [{"project_id", "field", "old", "new"}]
+      errors: [str]  — rows/fields that were skipped, with reason.
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(uploaded_file, data_only=True)
+    ws = wb["projects"] if "projects" in wb.sheetnames else wb.active
+    header = [c.value for c in ws[1]]
+    if "project_id" not in header:
+        raise ValueError("Sheet is missing a 'project_id' column")
+
+    diff = []
+    errors = []
+    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        row_dict = dict(zip(header, row))
+        pid = row_dict.get("project_id")
+        if not pid:
+            continue
+        current = get_project(pid)
+        if not current:
+            errors.append(f"Row {row_idx}: project_id '{pid}' not found — skipping row")
+            continue
+
+        for field in _BULK_EDITABLE_FIELDS:
+            if field not in row_dict:
+                continue
+            raw_new = row_dict[field]
+            old = current.get(field)
+
+            if _bulk_norm(old) == _bulk_norm(raw_new):
+                continue
+
+            # Coerce / validate
+            new = raw_new
+            if field == "status":
+                if new and str(new) not in VALID_STATUSES:
+                    errors.append(f"Row {row_idx} ({pid}): invalid status '{new}' — skipping field")
+                    continue
+            elif field == "target_date":
+                if isinstance(new, datetime):
+                    new = new.date().isoformat()
+                elif isinstance(new, date):
+                    new = new.isoformat()
+                elif new not in (None, ""):
+                    try:
+                        date.fromisoformat(str(new))
+                        new = str(new)
+                    except ValueError:
+                        errors.append(f"Row {row_idx} ({pid}): target_date '{raw_new}' must be YYYY-MM-DD — skipping field")
+                        continue
+            elif field == "estimated_cost":
+                if new not in (None, ""):
+                    try:
+                        new = float(new)
+                    except (ValueError, TypeError):
+                        errors.append(f"Row {row_idx} ({pid}): estimated_cost '{raw_new}' must be numeric — skipping field")
+                        continue
+
+            if new == "":
+                new = None
+
+            diff.append({"project_id": pid, "field": field, "old": old, "new": new})
+
+    return diff, errors
+
 
 # ── Page Config ───────────────────────────────────────────────────────────────
 
@@ -66,7 +184,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigate",
-        ["Dashboard", "Submit Update", "Project Details", "Sprints", "Reports", "Settings"],
+        ["Dashboard", "Submit Update", "Timeline", "Project Details", "Sprints", "Reports", "Settings"],
         index=0,
         label_visibility="collapsed",
         key="nav_page",
@@ -217,7 +335,7 @@ if page == "Dashboard":
                             unsafe_allow_html=True,
                         )
 
-    # ── Stat Cards ────────────────────────────────────────────────────────
+    # ── Stat Cards (click to filter the table below) ─────────────────────
     summary = get_status_summary()
     sorted_statuses = sorted(summary.items(), key=lambda x: -x[1])
 
@@ -229,23 +347,63 @@ if page == "Dashboard":
         "Descoped": COLORS["neutral"],
     }
 
-    ncols = len(sorted_statuses)
-    stat_html = f'<div style="display:grid;grid-template-columns:repeat({ncols},1fr);gap:16px;margin-bottom:28px">'
-    for status, count in sorted_statuses:
-        bar = bar_color_map.get(status, COLORS["neutral"])
-        stat_html += (
-            f'<div style="background:#fff;border:1px solid #edebe9;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04);'
-            f'padding:20px 20px 0;position:relative;overflow:hidden;'
-            f'transition:all 0.15s ease;cursor:pointer" '
-            f'onmouseover="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.08)\';this.style.borderColor=\'#d2d0ce\'" '
-            f'onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 1px 2px rgba(0,0,0,0.04)\';this.style.borderColor=\'#edebe9\'">'
-            f'<div style="font-size:32px;font-weight:700;letter-spacing:-1px;color:#242424;line-height:1.1">{count}</div>'
-            f'<div style="font-size:13px;color:#616161;margin-top:4px;margin-bottom:16px;font-weight:500">{status}</div>'
-            f'<div style="height:3px;margin:0 -20px;background:{bar}"></div>'
-            f'</div>'
-        )
-    stat_html += '</div>'
-    st.markdown(stat_html, unsafe_allow_html=True)
+    if "dashboard_status_filter" not in st.session_state:
+        st.session_state["dashboard_status_filter"] = []
+
+    # Scoped CSS so only these buttons get the card treatment.
+    st.markdown(
+        """
+        <style>
+        div[data-dashboard-stats] div.stButton > button {
+            background: #fff; border: 1px solid #edebe9; border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            padding: 18px 18px 14px; min-height: 92px;
+            text-align: left; width: 100%;
+            font-weight: 500; color: #242424;
+            transition: all 0.15s ease;
+            line-height: 1.25;
+        }
+        div[data-dashboard-stats] div.stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-color: #d2d0ce;
+        }
+        div[data-dashboard-stats] div.stButton > button:focus {
+            outline: none; box-shadow: 0 0 0 2px rgba(0,120,212,0.25);
+        }
+        div[data-dashboard-stats] div.stButton > button[kind="primary"] {
+            background: #eff6fc; border-color: #0078d4; color: #242424;
+        }
+        </style>
+        <div data-dashboard-stats></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    stat_cols = st.columns(len(sorted_statuses))
+    for i, (status, count) in enumerate(sorted_statuses):
+        with stat_cols[i]:
+            is_active = st.session_state["dashboard_status_filter"] == [status]
+            if st.button(
+                f"{count}\n\n{status}",
+                key=f"stat_{status}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+                help=f"Click to filter table to {status} projects (click again to clear).",
+            ):
+                st.session_state["dashboard_status_filter"] = (
+                    [] if is_active else [status]
+                )
+                st.rerun()
+
+    st.markdown(
+        f'<div style="height:3px;margin:-6px 0 22px;background:linear-gradient(to right,'
+        + ','.join(f'{bar_color_map.get(s, COLORS["neutral"])} {i*100/len(sorted_statuses):.1f}%,'
+                   f'{bar_color_map.get(s, COLORS["neutral"])} {(i+1)*100/len(sorted_statuses):.1f}%'
+                   for i, (s, _) in enumerate(sorted_statuses))
+        + ')"></div>',
+        unsafe_allow_html=True,
+    )
 
     # ── All Projects Table ────────────────────────────────────────────────
     st.markdown('<div class="section-title">All Projects</div>',
@@ -253,7 +411,10 @@ if page == "Dashboard":
 
     filter_cols = st.columns(4)
     with filter_cols[0]:
-        status_filter = st.multiselect("Status", VALID_STATUSES, default=[])
+        status_filter = st.multiselect(
+            "Status", VALID_STATUSES,
+            key="dashboard_status_filter",
+        )
     with filter_cols[1]:
         continent_list = sorted(set(p["continent"] for p in projects))
         continent_filter = st.multiselect("Continent", continent_list, default=[])
@@ -374,6 +535,92 @@ if page == "Dashboard":
                     unsafe_allow_html=True,
                 )
 
+    # ── Bulk edit via Excel ──────────────────────────────────────────────
+    with st.expander("📥 Bulk edit via Excel"):
+        st.caption(
+            "Export the project list to Excel, edit offline, re-upload to apply changes. "
+            f"Editable columns: {', '.join(_BULK_EDITABLE_FIELDS)}. "
+            "project_id is the key — rows with unknown project_ids are skipped."
+        )
+
+        be_cols = st.columns([2, 5])
+        with be_cols[0]:
+            xlsx_bytes = _export_projects_xlsx(get_all_projects())
+            st.download_button(
+                "📤  Export to Excel",
+                data=xlsx_bytes,
+                file_name=f"sparrow_projects_{date.today().isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="bulk_export_btn",
+            )
+
+        st.markdown("<hr style='margin:10px 0;border:none;border-top:1px solid #edebe9'>",
+                    unsafe_allow_html=True)
+
+        uploaded = st.file_uploader(
+            "Upload edited Excel (.xlsx)",
+            type=["xlsx"], key="bulk_upload_file",
+            help="File should have a 'projects' sheet (or a single sheet). "
+                 "Must include a 'project_id' column.",
+        )
+
+        if uploaded is not None:
+            try:
+                diff, errors = _parse_bulk_upload(uploaded)
+            except Exception as e:
+                st.error(f"Could not read file: {e}")
+                diff, errors = [], []
+
+            if errors:
+                with st.expander(f"⚠️ {len(errors)} warning(s)"):
+                    for msg in errors:
+                        st.caption(f"• {msg}")
+
+            if not diff:
+                st.info("No changes detected against current DB state.")
+            else:
+                st.markdown(f"**{len(diff)} change(s) detected.** Review before applying.")
+                preview_df = pd.DataFrame(diff)[["project_id", "field", "old", "new"]]
+                st.dataframe(preview_df, use_container_width=True, hide_index=True, height=280)
+
+                apply_cols = st.columns([5, 2])
+                with apply_cols[1]:
+                    apply_clicked = st.button(
+                        f"Apply {len(diff)} change(s)",
+                        type="primary", use_container_width=True,
+                        key="bulk_apply_btn",
+                    )
+                if apply_clicked:
+                    applied = 0
+                    failures = []
+                    # Group changes by project_id so each project gets one history row.
+                    by_pid = {}
+                    for c in diff:
+                        by_pid.setdefault(c["project_id"], {})[c["field"]] = c["new"]
+
+                    for pid, updates in by_pid.items():
+                        try:
+                            changes = update_project(pid, updates, "Bulk Excel upload")
+                            if changes:
+                                add_history(
+                                    pid, changes,
+                                    source_text=f"Bulk xlsx upload: {uploaded.name}",
+                                    source_type="manual",
+                                    updated_by="Bulk Excel upload",
+                                    llm_summary=f"Bulk edit: {', '.join(changes.keys())}",
+                                )
+                                applied += 1
+                        except Exception as e:
+                            failures.append(f"{pid}: {e}")
+
+                    if applied:
+                        st.success(f"Applied changes to {applied} project(s).")
+                    if failures:
+                        st.error("Some projects failed:\n" + "\n".join(failures))
+                    if applied and not failures:
+                        st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SUBMIT UPDATE
@@ -449,12 +696,31 @@ elif page == "Submit Update":
                         unsafe_allow_html=True,
                     )
 
-                # Proposed changes
+                # Proposed project-level changes
                 changes = result.get("proposed_changes", [])
                 if changes:
-                    st.markdown("**Proposed Changes:**")
+                    st.markdown("**Proposed project changes:**")
                     change_df = pd.DataFrame(changes)
                     st.dataframe(change_df, use_container_width=True, hide_index=True)
+
+                # Proposed phase-level changes
+                phase_changes = result.get("phase_changes", [])
+                if phase_changes:
+                    st.markdown("**Proposed phase changes:**")
+                    rows = []
+                    for pc in phase_changes:
+                        fu = pc.get("field_updates") or {}
+                        rows.append({
+                            "project_id": pc.get("project_id"),
+                            "phase_id": pc.get("phase_id"),
+                            "action": pc.get("action"),
+                            "name": fu.get("name"),
+                            "start_date": fu.get("start_date"),
+                            "end_date": fu.get("end_date"),
+                            "status": fu.get("status"),
+                            "evidence": pc.get("evidence"),
+                        })
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
                 # New contacts
                 contacts = result.get("new_contacts", [])
@@ -466,6 +732,7 @@ elif page == "Submit Update":
                 act_cols = st.columns([2, 2, 1])
                 with act_cols[0]:
                     if st.button("Approve All", type="primary", use_container_width=True):
+                        from db import apply_phase_change
                         history_ids = []
                         for change in changes:
                             pid = change["project_id"]
@@ -483,6 +750,25 @@ elif page == "Submit Update":
                                 )
                                 history_ids.append(hid)
 
+                        # Apply phase-level changes, one history row per phase change
+                        for pc in phase_changes:
+                            pid = pc.get("project_id")
+                            if not pid:
+                                continue
+                            summary = apply_phase_change(pid, pc)
+                            if summary.get("action") == "noop":
+                                continue
+                            hid = add_history(
+                                pid,
+                                {"phase": {"old": f"phase_id={summary.get('phase_id')}",
+                                           "new": json.dumps(summary)}},
+                                source_text=st.session_state["pending_text"],
+                                source_type=st.session_state["pending_type"],
+                                updated_by=st.session_state["pending_by"],
+                                llm_summary=f"Phase {summary.get('action')}: {pc.get('evidence') or ''}"[:250],
+                            )
+                            history_ids.append(hid)
+
                         for c in contacts:
                             add_contact(
                                 name=c.get("name", ""),
@@ -499,7 +785,8 @@ elif page == "Submit Update":
                             input_type="update",
                             history_ids=history_ids,
                         )
-                        st.success(f"Applied {len(changes)} change(s).")
+                        total_applied = len(changes) + len(phase_changes)
+                        st.success(f"Applied {total_applied} change(s) ({len(changes)} project, {len(phase_changes)} phase).")
                         del st.session_state["pending_result"]
                         st.rerun()
 
@@ -609,6 +896,193 @@ elif page == "Submit Update":
                     st.rerun()
                 else:
                     st.info("No changes detected.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TIMELINE
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Timeline":
+    st.markdown("## Timeline")
+    st.caption(
+        "Development tracks and deployments on one Gantt (vis-timeline). "
+        "DEVELOPMENT and DEPLOYMENTS sections are collapsible — click the header to fold. "
+        "Amber arrows mark active blockers; dashed gray arrows mark resolved dependencies."
+    )
+
+    rows = get_timeline_rows(include_closed=True)
+    if not rows:
+        st.info("No phase data yet. Run `python seed_dev_tracks.py` to seed dev tracks, "
+                "and re-open a project so its single synthesized phase shows up.")
+    else:
+        from timeline_component import render_timeline, build_payload
+
+        today = date.today()
+
+        # ── Filters ──────────────────────────────────────────────────────────
+        f_cols = st.columns([2, 2, 2, 3])
+        with f_cols[0]:
+            types = sorted({r["item_type"] for r in rows})
+            sel_types = st.multiselect("Item type", types, default=types)
+        with f_cols[1]:
+            statuses = sorted({r["phase_status"] for r in rows})
+            sel_statuses = st.multiselect("Phase status", statuses, default=statuses)
+        with f_cols[2]:
+            hide_done = st.checkbox("Hide Done / Cancelled", value=False)
+        with f_cols[3]:
+            show_deployments = st.checkbox("Show deployment lanes", value=True,
+                                           help="Dev tracks are always shown; toggle to hide the ~40 deployment lanes.")
+
+        def lane_for(r):
+            if r["item_type"] == "dev_track":
+                return r["track_name"] or r["project_id"]
+            loc = r["location"] or r["partner_org"] or r["project_id"]
+            return f"{r['country']} — {loc}" if r["country"] else loc
+
+        def _normalize_span(r):
+            """Return (start, end) strings with both populated, or (None, None) if impossible."""
+            start = r["start_date"]
+            end = r["end_date"]
+            if not start and not end:
+                return None, None
+            if start and not end:
+                end = start
+            if end and not start:
+                try:
+                    end_dt = datetime.fromisoformat(end).date()
+                    start = (end_dt - timedelta(days=30)).isoformat()
+                except ValueError:
+                    return None, None
+            return start, end
+
+        # Apply filters to the raw rows once — everything downstream uses filtered_rows.
+        filtered_rows = []
+        for r in rows:
+            if r["item_type"] not in sel_types:
+                continue
+            if r["phase_status"] not in sel_statuses:
+                continue
+            if hide_done and r["phase_status"] in ("Done", "Cancelled"):
+                continue
+            if not show_deployments and r["item_type"] == "deployment":
+                continue
+            s, _ = _normalize_span(r)
+            if not s:
+                continue
+            filtered_rows.append(r)
+
+        if not filtered_rows:
+            st.info("No phases match the current filters.")
+        else:
+            # ── KPI summary header ──────────────────────────────────────────
+            lanes_in_view = list({r["project_id"] for r in filtered_rows})
+
+            def _lane_at_risk(pid):
+                for r in filtered_rows:
+                    if r["project_id"] != pid:
+                        continue
+                    if r["phase_status"] in ("At Risk", "Blocked"):
+                        return True
+                    if r["phase_status"] not in ("Done", "Cancelled") and r["end_date"]:
+                        try:
+                            if date.fromisoformat(r["end_date"]) < today:
+                                return True
+                        except ValueError:
+                            pass
+                return False
+
+            at_risk_lanes = [pid for pid in lanes_in_view if _lane_at_risk(pid)]
+            on_track_lanes = [pid for pid in lanes_in_view if pid not in at_risk_lanes]
+
+            LAUNCH_KEYS = {"Launch", "Rollout", "Installed"}
+            milestones = []
+            for r in filtered_rows:
+                if r["phase_status"] in ("Done", "Cancelled"):
+                    continue
+                if not r["end_date"]:
+                    continue
+                try:
+                    end_dt = date.fromisoformat(r["end_date"])
+                except ValueError:
+                    continue
+                if end_dt < today:
+                    continue
+                if r["phase_key"] in LAUNCH_KEYS:
+                    milestones.append((end_dt, r["phase_name"]))
+            milestones.sort()
+            next_ms = milestones[0] if milestones else None
+
+            next_ms_text = (
+                f'{next_ms[0].strftime("%b %d")} <span style="color:#94a3b8">·</span> '
+                f'<span style="color:#64748b">{next_ms[1]}</span>'
+                if next_ms else '—'
+            )
+            kpi_html = (
+                '<div style="display:flex;gap:26px;align-items:baseline;flex-wrap:wrap;'
+                'padding:14px 20px;margin:0 0 16px;background:#f8fafc;border:1px solid #e2e8f0;'
+                'border-radius:8px;font-family:Inter,Segoe UI,Arial,sans-serif;color:#334155">'
+                f'<span><span style="color:#64748b;font-size:12px;font-weight:500">Tracks</span> '
+                f'<b style="color:#1d4ed8;font-size:16px;margin-left:4px">{len(lanes_in_view)}</b></span>'
+                f'<span><span style="color:#64748b;font-size:12px;font-weight:500">On Track</span> '
+                f'<b style="color:#475569;font-size:16px;margin-left:4px">{len(on_track_lanes)}</b></span>'
+                f'<span><span style="color:#64748b;font-size:12px;font-weight:500">At Risk</span> '
+                f'<b style="color:#d97706;font-size:16px;margin-left:4px">{len(at_risk_lanes)}</b></span>'
+                f'<span><span style="color:#64748b;font-size:12px;font-weight:500">Next Milestone</span> '
+                f'<b style="color:#1d4ed8;font-size:14px;margin-left:4px">{next_ms_text}</b></span>'
+                '</div>'
+            )
+            st.markdown(kpi_html, unsafe_allow_html=True)
+
+            # ── vis-timeline Gantt (real swim lanes, sectioned + collapsible,
+            # SVG overlay draws elbow dependency arrows) ────────────────────
+            n_groups = (
+                2  # section headers
+                + len({r["project_id"] for r in filtered_rows if r["item_type"] == "dev_track"})
+                + len({r["project_id"] for r in filtered_rows if r["item_type"] != "dev_track"})
+            )
+            # ~30 px per lane + ~80 px for axis/headers/margin.
+            iframe_height = max(320, 90 + n_groups * 30)
+            render_timeline(filtered_rows, today=today, height=iframe_height)
+
+            # ── Phases needing attention ─────────────────────────────────────
+            overdue = []
+            upcoming = []
+            for r in filtered_rows:
+                if r["phase_status"] in ("Done", "Cancelled") or not r["end_date"]:
+                    continue
+                try:
+                    end_dt = date.fromisoformat(r["end_date"])
+                except ValueError:
+                    continue
+                lane_label = (r.get("track_name") or r.get("location")
+                              or r["project_id"])
+                if end_dt < today:
+                    overdue.append((end_dt, lane_label, r["phase_name"]))
+                elif (end_dt - today).days <= 30:
+                    upcoming.append((end_dt, lane_label, r["phase_name"]))
+
+            if overdue or upcoming:
+                att_cols = st.columns(2)
+                with att_cols[0]:
+                    st.markdown("**Overdue phases**")
+                    if overdue:
+                        for end_dt, lane, phase in sorted(overdue):
+                            d_over = (today - end_dt).days
+                            st.markdown(
+                                f"- {lane} — **{phase}** "
+                                f"<span style='color:#b91c1c'>({d_over}d overdue)</span>",
+                                unsafe_allow_html=True,
+                            )
+                    else:
+                        st.caption("None.")
+                with att_cols[1]:
+                    st.markdown("**Ending within 30 days**")
+                    if upcoming:
+                        for end_dt, lane, phase in sorted(upcoming):
+                            d_left = (end_dt - today).days
+                            st.markdown(f"- {lane} — **{phase}** ({d_left}d)")
+                    else:
+                        st.caption("None.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -788,6 +1262,110 @@ elif page == "Project Details":
                         st.rerun()
                     except Exception as e:
                         st.error(f"Save failed: {e}")
+
+        # ── Phases editor ─────────────────────────────────────────────────
+        with st.expander("🗂️ Phases (feeds the Timeline)"):
+            from db import get_phases, upsert_phases
+            from config import (
+                DEV_PHASE_KEYS, DEPLOY_PHASE_KEYS, PHASE_STATUSES,
+            )
+
+            phase_key_options = (
+                DEV_PHASE_KEYS if p.get("item_type") == "dev_track"
+                else DEPLOY_PHASE_KEYS
+            ) + ["custom"]
+
+            current_phases = get_phases(pid)
+            if current_phases:
+                phases_df = pd.DataFrame(current_phases)
+            else:
+                phases_df = pd.DataFrame(columns=[
+                    "id", "ordering", "phase_key", "name",
+                    "start_date", "end_date", "status", "notes",
+                ])
+
+            # Normalize columns for the editor, preserving id as a hidden key.
+            editor_cols = ["ordering", "phase_key", "name", "start_date",
+                           "end_date", "status", "notes"]
+            display_df = phases_df.copy()
+            for col in editor_cols:
+                if col not in display_df.columns:
+                    display_df[col] = None
+            # Keep id so we can match rows back on save.
+            if "id" not in display_df.columns:
+                display_df["id"] = None
+
+            edited_phases = st.data_editor(
+                display_df[["id"] + editor_cols],
+                use_container_width=True,
+                hide_index=True,
+                num_rows="dynamic",
+                key=f"phases_editor_{pid}",
+                column_config={
+                    "id": st.column_config.NumberColumn("id", disabled=True, help="phase row id"),
+                    "ordering": st.column_config.NumberColumn("Order", width="small", default=0),
+                    "phase_key": st.column_config.SelectboxColumn(
+                        "Type", options=phase_key_options, default="custom", width="small",
+                    ),
+                    "name": st.column_config.TextColumn("Name", width="medium", required=True),
+                    "start_date": st.column_config.TextColumn("Start (YYYY-MM-DD)", width="small"),
+                    "end_date": st.column_config.TextColumn("End (YYYY-MM-DD)", width="small"),
+                    "status": st.column_config.SelectboxColumn(
+                        "Status", options=PHASE_STATUSES, default="Planned", width="small",
+                    ),
+                    "notes": st.column_config.TextColumn("Notes"),
+                },
+            )
+
+            ph_cols = st.columns([5, 2])
+            with ph_cols[1]:
+                save_phases = st.button(
+                    "Save phases", type="primary", use_container_width=True,
+                    key=f"save_phases_{pid}",
+                )
+
+            if save_phases:
+                rows_in = edited_phases.to_dict("records")
+                # Pandas gives NaN for blank cells; coerce to None.
+                for r in rows_in:
+                    for k, v in list(r.items()):
+                        if isinstance(v, float) and pd.isna(v):
+                            r[k] = None
+                        # Convert numpy ints to plain ints for sqlite
+                        if hasattr(v, "item") and not isinstance(v, str):
+                            try:
+                                r[k] = v.item()
+                            except (ValueError, AttributeError):
+                                pass
+
+                try:
+                    deltas = upsert_phases(pid, rows_in)
+                    n = (len(deltas["created"]) + len(deltas["updated"])
+                         + len(deltas["deleted"]))
+                    if n == 0:
+                        st.info("No phase changes detected.")
+                    else:
+                        # One history row summarizing the phase edits.
+                        summary_parts = []
+                        if deltas["created"]:
+                            summary_parts.append(f"{len(deltas['created'])} created")
+                        if deltas["updated"]:
+                            summary_parts.append(f"{len(deltas['updated'])} updated")
+                        if deltas["deleted"]:
+                            summary_parts.append(f"{len(deltas['deleted'])} deleted")
+                        add_history(
+                            pid,
+                            {"phases": {"old": f"{len(current_phases)} phase(s)",
+                                        "new": ", ".join(summary_parts)}},
+                            source_text="Phase editor on Project Details",
+                            source_type="manual",
+                            updated_by="Phase editor",
+                            llm_summary=f"Phases: {', '.join(summary_parts)}",
+                        )
+                        st.success(f"Phases saved — {', '.join(summary_parts)}.")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Save failed: {e}")
 
         # ── Two Column: Info + History / Contacts + Actions ───────────────
         left_col, right_col = st.columns([2, 1])

@@ -48,6 +48,29 @@ DEADLINE_ALERTS = [
 # --- Team ---
 TEAM_MEMBERS = ["Bruno", "Carl", "Miao", "Rahul", "Manolo"]
 
+# --- Phase vocabularies (per item_type) ---
+# Keyed off projects.item_type ('deployment' vs 'dev_track').
+DEV_PHASE_KEYS    = ["Dev", "Testing", "Manual", "OpenSource", "Launch", "Rollout"]
+DEPLOY_PHASE_KEYS = ["Scoping", "Approved", "OnTrack", "Installed", "Done"]
+PHASE_STATUSES    = ["Planned", "In Progress", "Done", "Blocked", "At Risk", "On Hold", "Cancelled"]
+
+# Muted professional palette (slates + ceruleans + amber) for the Gantt.
+# Done is a dark slate (work complete, de-emphasized). In Progress is a
+# saturated cerulean so active work pops. Planned is a pale slate.
+# At Risk / Blocked use warm amber/crimson for immediate attention.
+PHASE_STATUS_COLORS = {
+    "Planned":     "#cbd5e1",   # slate-300
+    "In Progress": "#1d4ed8",   # blue-700 (cerulean)
+    "Done":        "#475569",   # slate-600
+    "Blocked":     "#b91c1c",   # red-700
+    "At Risk":     "#d97706",   # amber-600
+    "On Hold":     "#e2e8f0",   # slate-200
+    "Cancelled":   "#f1f5f9",   # slate-100
+}
+
+# Statuses whose bars are light enough to need dark text inside them.
+PHASE_LIGHT_FILL_STATUSES = {"Planned", "On Hold", "Cancelled"}
+
 # --- Microsoft Fiscal Year Helpers ---
 def fy_end_date(fy_year: int) -> date:
     """Microsoft FY ends June 30. FY26 ends 2026-06-30."""

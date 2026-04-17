@@ -117,6 +117,26 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_wi_iteration ON devops_work_items(iteration_path);
         CREATE INDEX IF NOT EXISTS idx_wi_assigned ON devops_work_items(assigned_to);
+
+        CREATE TABLE IF NOT EXISTS phases (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id          TEXT NOT NULL,
+            phase_key           TEXT NOT NULL,       -- enum from config.DEV_PHASE_KEYS / DEPLOY_PHASE_KEYS, or 'custom'
+            name                TEXT NOT NULL,       -- display label (may override phase_key)
+            ordering            INTEGER NOT NULL DEFAULT 0,
+            start_date          TEXT,                -- ISO date
+            end_date            TEXT,                -- ISO date
+            status              TEXT NOT NULL DEFAULT 'Planned',
+            depends_on_phase_id INTEGER,
+            devops_id           INTEGER,
+            notes               TEXT,
+            last_updated        TEXT NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (depends_on_phase_id) REFERENCES phases(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_phases_project ON phases(project_id, ordering);
+        CREATE INDEX IF NOT EXISTS idx_phases_end ON phases(end_date);
         """)
 
         # ── Migrations for existing databases ────────────────────────────
@@ -126,8 +146,77 @@ def init_db():
         except Exception:
             conn.execute("ALTER TABLE projects ADD COLUMN is_at_risk INTEGER NOT NULL DEFAULT 0")
 
+        # Add phase-era columns to projects (item_type, track_name, start_date, parent_project_id)
+        _migrate_phase_columns(conn)
+
         # Migrate old statuses to new simplified statuses
         _migrate_statuses(conn)
+
+        # Backfill one phase per deployment (idempotent — only runs when no phase exists yet)
+        _backfill_phases(conn)
+
+
+def _migrate_phase_columns(conn):
+    """Add item_type, track_name, start_date, parent_project_id to projects. Idempotent."""
+    new_cols = [
+        ("item_type",         "TEXT NOT NULL DEFAULT 'deployment'"),
+        ("track_name",        "TEXT"),
+        ("start_date",        "TEXT"),
+        ("parent_project_id", "TEXT"),
+    ]
+    for col, ddl in new_cols:
+        try:
+            conn.execute(f"SELECT {col} FROM projects LIMIT 1")
+        except Exception:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {ddl}")
+
+
+_STATUS_TO_PHASE_STATUS = {
+    "Scoping":                       "Planned",
+    "Active - Waiting on Partner":   "In Progress",
+    "Active - Waiting on Us":        "In Progress",
+    "Complete":                      "Done",
+    "Descoped":                      "Cancelled",
+}
+
+
+def _backfill_phases(conn):
+    """For any project with no phases yet, synthesize a single phase from its target_date + status."""
+    rows = conn.execute("""
+        SELECT p.project_id, p.status, p.target_date, p.timeline_label,
+               p.start_date, p.last_updated, p.is_at_risk
+        FROM projects p
+        LEFT JOIN phases ph ON ph.project_id = p.project_id
+        WHERE ph.id IS NULL
+        GROUP BY p.project_id
+    """).fetchall()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    for r in rows:
+        phase_status = _STATUS_TO_PHASE_STATUS.get(r["status"], "Planned")
+        if r["is_at_risk"] and phase_status == "In Progress":
+            phase_status = "At Risk"
+        # Derive a plausible start so the Gantt bar has width.
+        start = r["start_date"]
+        end = r["target_date"]
+        if not start:
+            if end:
+                try:
+                    end_dt = datetime.fromisoformat(end).date()
+                    start = (end_dt - timedelta(days=90)).isoformat()
+                except (ValueError, TypeError):
+                    start = None
+            elif r["last_updated"]:
+                try:
+                    start = datetime.fromisoformat(r["last_updated"]).date().isoformat()
+                except (ValueError, TypeError):
+                    start = None
+        name = r["timeline_label"] or "Deployment"
+        conn.execute(
+            """INSERT INTO phases
+               (project_id, phase_key, name, ordering, start_date, end_date, status, last_updated)
+               VALUES (?, 'installed', ?, 0, ?, ?, ?, ?)""",
+            (r["project_id"], name, start, end, phase_status, now),
+        )
 
 
 def _migrate_statuses(conn):
@@ -378,6 +467,194 @@ def get_deadline_approaching():
                 flagged.append(p)
                 break
     return flagged
+
+
+def get_phases(project_id):
+    """All phases for a project, in ordering order."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM phases WHERE project_id = ? ORDER BY ordering, id",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def upsert_phases(project_id: str, rows: list):
+    """
+    Replace a project's phases with the given list.
+
+    Each input row may have an `id` (update existing) or not (create new).
+    Rows present in DB but absent from input are deleted.
+    Empty-looking rows (no name/start/end) are treated as "not a real phase"
+    and skipped — lets the data_editor have blank trailing rows.
+
+    Returns a dict: {"created": [...], "updated": [(id, changes), ...], "deleted": [...]}
+    suitable for passing to add_history.
+    """
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    deltas = {"created": [], "updated": [], "deleted": []}
+
+    with get_conn() as conn:
+        existing = {r["id"]: dict(r) for r in conn.execute(
+            "SELECT * FROM phases WHERE project_id = ?", (project_id,)
+        ).fetchall()}
+        seen_ids = set()
+
+        for i, row in enumerate(rows):
+            if not (row.get("name") or row.get("start_date") or row.get("end_date")):
+                continue
+
+            payload = {
+                "phase_key":          row.get("phase_key") or "custom",
+                "name":               row.get("name") or "Untitled phase",
+                "ordering":           int(row.get("ordering") if row.get("ordering") is not None else i),
+                "start_date":         row.get("start_date") or None,
+                "end_date":           row.get("end_date") or None,
+                "status":             row.get("status") or "Planned",
+                "depends_on_phase_id": row.get("depends_on_phase_id") or None,
+                "notes":              row.get("notes") or None,
+            }
+
+            row_id = row.get("id")
+            if row_id and row_id in existing:
+                seen_ids.add(row_id)
+                old = existing[row_id]
+                changed = {
+                    k: {"old": old.get(k), "new": v}
+                    for k, v in payload.items()
+                    if str(old.get(k) or "") != str(v or "")
+                }
+                if changed:
+                    conn.execute(
+                        """UPDATE phases
+                           SET phase_key=?, name=?, ordering=?, start_date=?, end_date=?,
+                               status=?, depends_on_phase_id=?, notes=?, last_updated=?
+                           WHERE id=?""",
+                        (payload["phase_key"], payload["name"], payload["ordering"],
+                         payload["start_date"], payload["end_date"], payload["status"],
+                         payload["depends_on_phase_id"], payload["notes"], now, row_id),
+                    )
+                    deltas["updated"].append((row_id, changed))
+            else:
+                cur = conn.execute(
+                    """INSERT INTO phases
+                       (project_id, phase_key, name, ordering, start_date, end_date,
+                        status, depends_on_phase_id, notes, last_updated)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (project_id, payload["phase_key"], payload["name"], payload["ordering"],
+                     payload["start_date"], payload["end_date"], payload["status"],
+                     payload["depends_on_phase_id"], payload["notes"], now),
+                )
+                deltas["created"].append({"id": cur.lastrowid, **payload})
+
+        for row_id, row in existing.items():
+            if row_id not in seen_ids:
+                conn.execute("DELETE FROM phases WHERE id = ?", (row_id,))
+                deltas["deleted"].append(row)
+
+    return deltas
+
+
+def apply_phase_change(project_id: str, change: dict):
+    """
+    Apply a single phase change (typically from the LLM).
+
+    change shape:
+      {"phase_id": int|None, "action": "create"|"update"|"delete",
+       "field_updates": {name, start_date, end_date, status, ...}}
+
+    Returns a summary dict describing what happened.
+    """
+    action = (change.get("action") or "update").lower()
+    phase_id = change.get("phase_id")
+    updates = change.get("field_updates") or {}
+    now = datetime.utcnow().isoformat(timespec="seconds")
+
+    with get_conn() as conn:
+        if action == "delete":
+            if phase_id:
+                conn.execute("DELETE FROM phases WHERE id = ? AND project_id = ?",
+                             (phase_id, project_id))
+            return {"action": "delete", "phase_id": phase_id}
+
+        if action == "create":
+            cur = conn.execute(
+                """INSERT INTO phases
+                   (project_id, phase_key, name, ordering, start_date, end_date,
+                    status, notes, last_updated)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (project_id,
+                 updates.get("phase_key") or "custom",
+                 updates.get("name") or "New phase",
+                 int(updates.get("ordering") or 0),
+                 updates.get("start_date"), updates.get("end_date"),
+                 updates.get("status") or "Planned",
+                 updates.get("notes"), now),
+            )
+            return {"action": "create", "phase_id": cur.lastrowid, "field_updates": updates}
+
+        # update
+        if not phase_id:
+            return {"action": "noop", "reason": "no phase_id given for update"}
+        row = conn.execute(
+            "SELECT * FROM phases WHERE id = ? AND project_id = ?",
+            (phase_id, project_id),
+        ).fetchone()
+        if not row:
+            return {"action": "noop", "reason": f"phase {phase_id} not found"}
+        old = dict(row)
+        sets, params, changed = [], [], {}
+        for k in ("name", "start_date", "end_date", "status", "notes", "phase_key", "ordering"):
+            if k in updates and updates[k] is not None:
+                if str(old.get(k) or "") != str(updates[k] or ""):
+                    sets.append(f"{k} = ?")
+                    params.append(updates[k])
+                    changed[k] = {"old": old.get(k), "new": updates[k]}
+        if sets:
+            sets.append("last_updated = ?")
+            params.extend([now, phase_id])
+            conn.execute(f"UPDATE phases SET {', '.join(sets)} WHERE id = ?", params)
+        return {"action": "update", "phase_id": phase_id, "changed": changed}
+
+
+def get_timeline_rows(include_closed=True):
+    """
+    Join phases to projects and return rows for the Timeline Gantt.
+    One row per phase. Empty list if no phases exist.
+    """
+    with get_conn() as conn:
+        sql = """
+            SELECT
+                ph.id             AS phase_id,
+                ph.project_id     AS project_id,
+                ph.phase_key      AS phase_key,
+                ph.name           AS phase_name,
+                ph.ordering       AS ordering,
+                ph.start_date     AS start_date,
+                ph.end_date       AS end_date,
+                ph.status         AS phase_status,
+                ph.depends_on_phase_id AS depends_on_phase_id,
+                ph.notes          AS phase_notes,
+                p.item_type       AS item_type,
+                p.track_name      AS track_name,
+                p.continent       AS continent,
+                p.country         AS country,
+                p.location        AS location,
+                p.partner_org     AS partner_org,
+                p.status          AS project_status,
+                p.is_at_risk      AS is_at_risk,
+                p.target_date     AS project_target_date,
+                p.last_updated    AS project_last_updated
+            FROM phases ph
+            JOIN projects p ON p.project_id = ph.project_id
+        """
+        if not include_closed:
+            placeholders = ",".join("?" for _ in CLOSED_STATUSES)
+            sql += f" WHERE p.status NOT IN ({placeholders})"
+            rows = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering", list(CLOSED_STATUSES)).fetchall()
+        else:
+            rows = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering").fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_status_summary():

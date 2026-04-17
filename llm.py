@@ -11,7 +11,7 @@ from config import (
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION,
     AZURE_OPENAI_API_KEY, VALID_STATUSES,
 )
-from db import get_all_projects, get_project_history, get_recent_history
+from db import get_all_projects, get_project_history, get_recent_history, get_phases
 
 
 _cached_client = None
@@ -64,23 +64,31 @@ def _chat(system: str, user: str, max_tokens: int = 4096) -> str:
     return response.choices[0].message.content
 
 
-def _projects_context(projects=None):
-    """Format all projects as compact context for the LLM."""
+def _projects_context(projects=None, include_phases: bool = True):
+    """Format all projects (with their phases) as compact context for the LLM."""
     if projects is None:
         projects = get_all_projects()
     lines = []
     for p in projects:
-        lines.append(
-            f"- {p['project_id']}: {p['location']} ({p['country']}) | "
-            f"Partner: {p['partner_org']} | Status: {p['status']} | "
+        item_type = p.get("item_type") or "deployment"
+        header = (
+            f"- {p['project_id']} [{item_type}]: "
+            + (f"{p.get('track_name') or ''} " if item_type == "dev_track" else f"{p.get('location') or ''} ({p.get('country') or ''}) ")
+            + f"| Partner: {p.get('partner_org') or '—'} | Status: {p['status']} | "
             f"Owner: {p.get('team_owner') or 'unassigned'} | "
             f"Timeline: {p.get('timeline_label') or 'TBD'} | "
-            f"Target date: {p.get('target_date') or 'none'} | "
-            f"Hardware: {p.get('hardware') or 'TBD'} | "
-            f"Cost: {p.get('estimated_cost') or 'TBD'} | "
-            f"Blocker: {p.get('blocker') or 'none'} | "
-            f"Notes: {p.get('notes') or 'none'}"
+            f"Target: {p.get('target_date') or 'none'} | "
+            f"Blocker: {p.get('blocker') or 'none'}"
         )
+        lines.append(header)
+        if include_phases:
+            phases = get_phases(p["project_id"])
+            for ph in phases:
+                lines.append(
+                    f"    phase[id={ph['id']}] {ph['name']} "
+                    f"({ph.get('start_date') or '?'} → {ph.get('end_date') or '?'}) "
+                    f"— {ph['status']}"
+                )
     return "\n".join(lines)
 
 
@@ -90,23 +98,32 @@ PARSE_SYSTEM = """You are the SPARROW Installation Tracker assistant. Your job i
 unstructured text (emails, Teams messages, meeting notes, plain English updates) and extract
 structured project updates.
 
-CURRENT PROJECTS:
+CURRENT PROJECTS (each with its phases indented below):
 {projects}
 
 VALID STATUSES (use only these): {statuses}
+VALID PHASE STATUSES: Planned, In Progress, Done, Blocked, At Risk, On Hold, Cancelled
 
 RULES:
 1. Identify which project(s) the input relates to by matching location, partner, country,
-   person names, or any identifying information.
-2. Extract field updates: status, blocker, timeline_label, target_date, hardware,
-   estimated_cost, deployment_type, team_owner, notes.
-3. Extract any new contact information (names, emails, phones).
-4. If the target_date can be inferred from language like "before end of FY26", normalize to
-   ISO date (FY26 ends 2026-06-30). Include a confidence level: hard/committed/soft/aspirational.
-5. If the input doesn't clearly map to a project, set match_confidence to "low".
-6. If the input is a question rather than an update, set input_type to "question".
-7. Preserve important context in a one-line llm_summary.
-8. For status changes, only use statuses from the VALID STATUSES list.
+   person names, track name, or any identifying information.
+2. Extract project-level field updates in `proposed_changes`: status, blocker, timeline_label,
+   target_date, hardware, estimated_cost, deployment_type, team_owner, notes.
+3. Extract PHASE-level updates in `phase_changes` when the input refers to a specific phase
+   of a dev track or a deployment milestone (e.g., "Water SPARROW deployment in June 2026"
+   refers to the deployment phase, not just the overall project). Each phase has a unique
+   numeric `id` shown above — use that `id` for updates and deletes. To create a new phase,
+   set phase_id to null and action to "create".
+4. When a date phrase like "deployment in June 2026" maps to an existing phase (by name or
+   phase_key), update that phase's start_date / end_date — do NOT only update the project's
+   target_date. A phase end_date of "June 2026" normalizes to 2026-06-30.
+5. Extract any new contact information (names, emails, phones).
+6. If the target_date can be inferred from language like "before end of FY26", normalize to
+   ISO date (FY26 ends 2026-06-30).
+7. If the input doesn't clearly map to a project, set match_confidence to "low".
+8. If the input is a question rather than an update, set input_type to "question".
+9. Preserve important context in a one-line llm_summary.
+10. For status changes, only use statuses from the VALID STATUSES list.
 
 Respond with ONLY valid JSON (no markdown fencing) in this exact format:
 {{
@@ -126,6 +143,21 @@ Respond with ONLY valid JSON (no markdown fencing) in this exact format:
       "evidence": "quote or paraphrase from input that justifies this change"
     }}
   ],
+  "phase_changes": [
+    {{
+      "project_id": "...",
+      "phase_id": 123,
+      "action": "update" | "create" | "delete",
+      "field_updates": {{
+        "name": "...",
+        "start_date": "YYYY-MM-DD",
+        "end_date": "YYYY-MM-DD",
+        "status": "...",
+        "notes": "..."
+      }},
+      "evidence": "quote or paraphrase from input that justifies this change"
+    }}
+  ],
   "new_contacts": [
     {{
       "name": "...",
@@ -140,7 +172,9 @@ Respond with ONLY valid JSON (no markdown fencing) in this exact format:
   "question_answer": null
 }}
 
-If input_type is "question", populate question_answer with your answer and leave proposed_changes empty.
+If input_type is "question", populate question_answer with your answer and leave
+proposed_changes and phase_changes empty. Omit phase_changes (or return []) when no phase-level
+update is warranted.
 """
 
 
@@ -167,12 +201,15 @@ def parse_input(text: str, submitted_by: str = None) -> dict:
             "input_type": "unclear",
             "matched_projects": [],
             "proposed_changes": [],
+            "phase_changes": [],
             "new_contacts": [],
             "llm_summary": "Failed to parse LLM response",
             "question_answer": None,
             "_raw_response": raw,
         }
 
+    # Ensure phase_changes key exists even on older responses.
+    result.setdefault("phase_changes", [])
     return result
 
 
