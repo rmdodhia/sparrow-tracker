@@ -5,6 +5,19 @@ deployments. It keeps a running picture of ~40 global installations — status,
 blockers, deadlines, sprint work — in one place, and uses an LLM to turn free-form
 updates (emails, notes) into structured records.
 
+**Quick start** (no credentials needed to browse):
+
+```bash
+git clone https://github.com/rmdodhia/sparrow-tracker
+cd sparrow-tracker
+pip install -r requirements.txt
+cp .env.example .env
+python seed_data.py
+streamlit run app.py
+```
+
+See [Setup](#setup) below for Python version, virtualenv, and credential config.
+
 ---
 
 ## For users of the app
@@ -83,22 +96,58 @@ change layout or styling, open the relevant `v2_*.html` side-by-side.
 
 ### Setup
 
+Requires **Python 3.10+**.
+
 ```bash
 # 1. Clone and install
 git clone https://github.com/rmdodhia/sparrow-tracker
 cd sparrow-tracker
+python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 # 2. Configure secrets
-cp .env.example .env    # if present; otherwise create .env
-# Fill in AZURE_OPENAI_* and (optionally) AZURE_DEVOPS_PAT, IMAP_*
+cp .env.example .env
+# Edit .env — see "Minimal run" vs "Full run" below for what to fill in
 
-# 3. Seed the DB (first time only)
+# 3. Seed the DB from the committed backlog (first time only)
 python seed_data.py
 
 # 4. Run
 streamlit run app.py
 ```
+
+Open http://localhost:8501 in a browser.
+
+#### Minimal run (no credentials)
+
+You can run the app with an empty `.env` — it will start, show the dashboard,
+and let you browse the seeded projects. What you lose:
+
+- **Submit Update** LLM parsing (sidebar shows "⚠️ LLM not configured")
+- **Ask SPARROW** natural-language Q&A
+- **Sprints** / DevOps sync
+- **Email ingestion** and **nudge emails**
+
+Everything else — browsing projects, editing fields by hand, reports, the
+history timeline — works.
+
+#### Full run (with credentials)
+
+Fill in `.env`:
+
+1. **Azure OpenAI** (required for LLM features): set `AZURE_OPENAI_ENDPOINT`,
+   `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_KEY`. The example file points at
+   the AI For Good Lab's EU2 deployment; swap in your own if you're outside
+   the lab.
+2. **Azure DevOps** (optional, for Sprints page): either set
+   `AZURE_DEVOPS_PAT`, or leave it blank and run `az login` once so the app
+   can use Entra ID via `DefaultAzureCredential`. Default org/project are
+   `onecela` / `AI For Good Lab` — override with `AZURE_DEVOPS_ORG` /
+   `AZURE_DEVOPS_PROJECT` if you're pointing elsewhere.
+3. **IMAP** (optional, for email-forwarding ingestion): set `IMAP_HOST`,
+   `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`. Microsoft 365 mailboxes now require
+   Microsoft Graph instead — support is in progress.
+4. **SMTP** (optional, for nudge emails): set the `SPARROW_SMTP_*` vars.
 
 ### Environment variables
 

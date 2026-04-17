@@ -161,11 +161,7 @@ with st.sidebar:
 if page == "Dashboard":
 
     # ── Header ────────────────────────────────────────────────────────────
-    header_cols = st.columns([8, 2])
-    with header_cols[0]:
-        st.markdown("## Dashboard")
-    with header_cols[1]:
-        st.link_button("Submit Update →", "#", type="primary", use_container_width=True)
+    st.markdown("## Dashboard")
 
     # ── Hero Banner ───────────────────────────────────────────────────────
     projects = get_all_projects()
