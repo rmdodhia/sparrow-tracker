@@ -1669,6 +1669,39 @@ elif page == "Sprints":
     if not devops_configured:
         st.warning("Azure DevOps PAT not configured. Add `AZURE_DEVOPS_PAT` to your `.env` file.")
 
+    # ── Shared helpers for both tabs ─────────────────────────────────────
+    state_colors = {
+        "Done": COLORS["success"], "Closed": COLORS["success"],
+        "Active": COLORS["primary"], "In Progress": COLORS["primary"],
+        "New": COLORS["neutral"], "To Do": COLORS["neutral"],
+        "Resolved": "#5c2d91",
+    }
+    type_icons = {
+        "User Story": "📖", "Task": "✅", "Bug": "🐛",
+        "Feature": "⭐", "Epic": "🏔️", "Issue": "⚠️",
+    }
+
+    def _sprint_sort_key(name: str):
+        # "April 2026" → parseable → sort by that date descending
+        # unparseable names (e.g. "Dec-Jan-25-26") → push below parsed ones
+        # "No sprint assigned" → push to the very bottom
+        from devops_sync import NO_SPRINT_LABEL
+        if name == NO_SPRINT_LABEL:
+            return (0, date.min)
+        try:
+            d = datetime.strptime(name, "%B %Y").date()
+            return (2, d)
+        except ValueError:
+            return (1, date.min)
+
+    def _one_thing_tag_for(sprint_name: str) -> str:
+        # Tag convention: "One Thing - <Month> FY<YY>" (e.g. "One Thing - April FY26").
+        try:
+            sprint_date = datetime.strptime(sprint_name, "%B %Y").date()
+            return f"One Thing - {sprint_date.strftime('%B')} FY{sprint_date.year % 100:02d}"
+        except ValueError:
+            return ""
+
     # ── View Tabs ────────────────────────────────────────────────────────
     tab_board, tab_person = st.tabs(["Sprint Board", "By Person"])
 
@@ -1679,31 +1712,6 @@ elif page == "Sprints":
         if not sprints_data:
             st.info("No work items found. Sync from Azure DevOps to populate.")
         else:
-            # State color map
-            state_colors = {
-                "Done": COLORS["success"], "Closed": COLORS["success"],
-                "Active": COLORS["primary"], "In Progress": COLORS["primary"],
-                "New": COLORS["neutral"], "To Do": COLORS["neutral"],
-                "Resolved": "#5c2d91",
-            }
-            type_icons = {
-                "User Story": "📖", "Task": "✅", "Bug": "🐛",
-                "Feature": "⭐", "Epic": "🏔️", "Issue": "⚠️",
-            }
-
-            def _sprint_sort_key(name: str):
-                # "April 2026" → parseable → sort by that date descending
-                # unparseable names (e.g. "Dec-Jan-25-26") → push below parsed ones
-                # "No sprint assigned" → push to the very bottom
-                from devops_sync import NO_SPRINT_LABEL
-                if name == NO_SPRINT_LABEL:
-                    return (0, date.min)
-                try:
-                    d = datetime.strptime(name, "%B %Y").date()
-                    return (2, d)
-                except ValueError:
-                    return (1, date.min)
-
             for sprint_name in sorted(sprints_data.keys(), key=_sprint_sort_key, reverse=True):
                 items = sprints_data[sprint_name]
                 total = len(items)
@@ -1723,13 +1731,7 @@ elif page == "Sprints":
                 )
 
                 # Items tagged as the sprint's "One Thing" go on top.
-                # Tag convention: "One Thing - <Month> FY<YY>" (e.g. "One Thing - April FY26").
-                one_thing_tag = ""
-                try:
-                    sprint_date = datetime.strptime(sprint_name, "%B %Y").date()
-                    one_thing_tag = f"One Thing - {sprint_date.strftime('%B')} FY{sprint_date.year % 100:02d}"
-                except ValueError:
-                    pass
+                one_thing_tag = _one_thing_tag_for(sprint_name)
 
                 def _item_sort(wi):
                     is_one_thing = bool(one_thing_tag) and one_thing_tag in (wi.get("tags") or "")
@@ -1778,6 +1780,12 @@ elif page == "Sprints":
         if not person_data:
             st.info("No work items found.")
         else:
+            from devops_sync import NO_SPRINT_LABEL
+
+            def _sprint_of(wi):
+                path = wi.get("iteration_path") or ""
+                return path.split("\\")[-1] if path else NO_SPRINT_LABEL
+
             for person in sorted(person_data.keys()):
                 items = person_data[person]
                 active = sum(1 for i in items if i.get("state") not in ("Done", "Closed", "Removed"))
@@ -1799,21 +1807,42 @@ elif page == "Sprints":
                     unsafe_allow_html=True,
                 )
 
+                grouped = {}
                 for wi in items:
-                    sc = state_colors.get(wi.get("state", ""), COLORS["neutral"])
-                    sprint = (wi.get("iteration_path") or "").split("\\")[-1] if wi.get("iteration_path") else ""
-                    st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:8px;'
-                        f'padding:6px 0;border-bottom:1px solid #f3f2f1;font-size:13px">'
-                        f'<span style="width:6px;height:6px;border-radius:50%;background:{sc};flex-shrink:0"></span>'
-                        f'<span style="flex:1;color:#242424">{wi["title"]}</span>'
-                        f'<span style="font-size:11px;color:#8a8886">{sprint}</span>'
-                        f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
-                        f'font-size:11px;font-weight:600;background:{sc}18;color:{sc}">{wi.get("state", "?")}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
+                    grouped.setdefault(_sprint_of(wi), []).append(wi)
+
+                body_html = ""
+                for sprint_name in sorted(grouped.keys(), key=_sprint_sort_key, reverse=True):
+                    one_thing_tag = _one_thing_tag_for(sprint_name)
+
+                    def _item_sort(wi, tag=one_thing_tag):
+                        is_one_thing = bool(tag) and tag in (wi.get("tags") or "")
+                        return (0 if is_one_thing else 1, wi.get("state", ""), wi.get("title", ""))
+
+                    body_html += (
+                        f'<div style="font-size:12px;font-weight:600;color:#616161;'
+                        f'text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 4px">'
+                        f'{sprint_name}</div>'
                     )
-                st.markdown('</div>', unsafe_allow_html=True)
+                    for wi in sorted(grouped[sprint_name], key=_item_sort):
+                        sc = state_colors.get(wi.get("state", ""), COLORS["neutral"])
+                        is_one_thing = bool(one_thing_tag) and one_thing_tag in (wi.get("tags") or "")
+                        row_bg = "#fff8e1" if is_one_thing else "transparent"
+                        star = ('<span title="One Thing" style="color:#f2c811">★</span>'
+                                if is_one_thing else '<span style="width:14px"></span>')
+                        body_html += (
+                            f'<div style="display:flex;align-items:center;gap:8px;'
+                            f'padding:6px 6px;border-bottom:1px solid #f3f2f1;font-size:13px;'
+                            f'background:{row_bg}">'
+                            f'{star}'
+                            f'<span style="width:6px;height:6px;border-radius:50%;background:{sc};flex-shrink:0"></span>'
+                            f'<span style="flex:1;color:#242424">{wi["title"]}</span>'
+                            f'<span style="display:inline-block;padding:2px 8px;border-radius:10px;'
+                            f'font-size:11px;font-weight:600;background:{sc}18;color:{sc}">{wi.get("state", "?")}</span>'
+                            f'</div>'
+                        )
+
+                st.markdown(body_html + '</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
