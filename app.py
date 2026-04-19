@@ -636,22 +636,30 @@ elif page == "Submit Update":
     input_col, context_col = st.columns([3, 2])
 
     with input_col:
-        text = st.text_area(
-            "Paste your update here", height=280,
-            placeholder="e.g., 'Paulo confirmed Salonga shipment arrived in Kinshasa yesterday. "
-            "Still waiting on customs clearance.'\n\nPaste emails, Teams messages, meeting notes, "
-            "or plain English — the AI will figure out the rest.",
-        )
+        with st.form("submit_update_form", clear_on_submit=False):
+            text = st.text_area(
+                "Paste your update here", height=280,
+                placeholder="e.g., 'Paulo confirmed Salonga shipment arrived in Kinshasa yesterday. "
+                "Still waiting on customs clearance.'\n\nPaste emails, Teams messages, meeting notes, "
+                "or plain English — the AI will figure out the rest.",
+                key="submit_update_text",
+            )
+            submitted = st.form_submit_button(
+                "Send to SPARROW", type="primary",
+                disabled=not llm_available, use_container_width=True,
+            )
 
-        if st.button("Send to SPARROW", type="primary", disabled=not llm_available or not text.strip(),
-                      use_container_width=True):
-            with st.spinner("Analyzing..."):
-                from llm import parse_input
-                result = parse_input(text, "auto")
-            st.session_state["pending_result"] = result
-            st.session_state["pending_text"] = text
-            st.session_state["pending_type"] = "update"
-            st.session_state["pending_by"] = "System"
+        if submitted:
+            if not text.strip():
+                st.warning("Paste some text before submitting.")
+            else:
+                with st.spinner("Analyzing..."):
+                    from llm import parse_input
+                    result = parse_input(text, "auto")
+                st.session_state["pending_result"] = result
+                st.session_state["pending_text"] = text
+                st.session_state["pending_type"] = "update"
+                st.session_state["pending_by"] = "System"
 
         # ── Results ───────────────────────────────────────────────────────
         if "pending_result" in st.session_state:
@@ -696,17 +704,48 @@ elif page == "Submit Update":
                         unsafe_allow_html=True,
                     )
 
-                # Proposed project-level changes
-                changes = result.get("proposed_changes", [])
-                if changes:
-                    st.markdown("**Proposed project changes:**")
-                    change_df = pd.DataFrame(changes)
-                    st.dataframe(change_df, use_container_width=True, hide_index=True)
+                def _clean_rows(df):
+                    rows = df.to_dict("records")
+                    for r in rows:
+                        for k, v in list(r.items()):
+                            if isinstance(v, float) and pd.isna(v):
+                                r[k] = None
+                            elif hasattr(v, "item") and not isinstance(v, str):
+                                try:
+                                    r[k] = v.item()
+                                except (ValueError, AttributeError):
+                                    pass
+                    return rows
 
-                # Proposed phase-level changes
+                # Proposed project-level changes (editable)
+                changes = result.get("proposed_changes", [])
+                edited_changes = changes
+                if changes:
+                    st.markdown("**Proposed project changes** — edit values or delete rows before approving:")
+                    change_df = pd.DataFrame(changes)
+                    for col in ("project_id", "field", "new_value", "evidence"):
+                        if col not in change_df.columns:
+                            change_df[col] = None
+                    change_df = change_df[["project_id", "field", "new_value", "evidence"]]
+                    edited_changes_df = st.data_editor(
+                        change_df,
+                        num_rows="dynamic",
+                        use_container_width=True, hide_index=True,
+                        key="edit_proposed_changes",
+                        column_config={
+                            "project_id": st.column_config.TextColumn("Project", disabled=True),
+                            "field": st.column_config.TextColumn("Field", disabled=True),
+                            "new_value": st.column_config.TextColumn("New value"),
+                            "evidence": st.column_config.TextColumn("Evidence", disabled=True),
+                        },
+                    )
+                    edited_changes = _clean_rows(edited_changes_df)
+
+                # Proposed phase-level changes (editable)
                 phase_changes = result.get("phase_changes", [])
+                edited_phase_changes = []
                 if phase_changes:
-                    st.markdown("**Proposed phase changes:**")
+                    st.markdown("**Proposed phase changes** — edit dates/status or delete rows before approving:")
                     rows = []
                     for pc in phase_changes:
                         fu = pc.get("field_updates") or {}
@@ -720,13 +759,59 @@ elif page == "Submit Update":
                             "status": fu.get("status"),
                             "evidence": pc.get("evidence"),
                         })
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    from config import PHASE_STATUSES
+                    phase_action_options = ["update", "create", "delete"]
+                    edited_phase_df = st.data_editor(
+                        pd.DataFrame(rows),
+                        num_rows="dynamic",
+                        use_container_width=True, hide_index=True,
+                        key="edit_phase_changes",
+                        column_config={
+                            "project_id": st.column_config.TextColumn("Project", disabled=True),
+                            "phase_id": st.column_config.NumberColumn("Phase id", help="Blank for create"),
+                            "action": st.column_config.SelectboxColumn(
+                                "Action", options=phase_action_options, default="update",
+                            ),
+                            "name": st.column_config.TextColumn("Name"),
+                            "start_date": st.column_config.TextColumn("Start (YYYY-MM-DD)"),
+                            "end_date": st.column_config.TextColumn("End (YYYY-MM-DD)"),
+                            "status": st.column_config.SelectboxColumn(
+                                "Status", options=[None] + list(PHASE_STATUSES),
+                            ),
+                            "evidence": st.column_config.TextColumn("Evidence", disabled=True),
+                        },
+                    )
+                    for r in _clean_rows(edited_phase_df):
+                        edited_phase_changes.append({
+                            "project_id": r.get("project_id"),
+                            "phase_id": r.get("phase_id"),
+                            "action": r.get("action") or "update",
+                            "field_updates": {
+                                "name": r.get("name"),
+                                "start_date": r.get("start_date"),
+                                "end_date": r.get("end_date"),
+                                "status": r.get("status"),
+                            },
+                            "evidence": r.get("evidence"),
+                        })
 
-                # New contacts
+                # New contacts (editable)
                 contacts = result.get("new_contacts", [])
+                edited_contacts = contacts
                 if contacts:
-                    st.markdown("**New Contacts Detected:**")
-                    st.dataframe(pd.DataFrame(contacts), use_container_width=True, hide_index=True)
+                    st.markdown("**New contacts detected** — edit or delete rows before approving:")
+                    contact_df = pd.DataFrame(contacts)
+                    for col in ("name", "organization", "role", "email", "phone", "linked_project"):
+                        if col not in contact_df.columns:
+                            contact_df[col] = None
+                    contact_df = contact_df[["name", "organization", "role", "email", "phone", "linked_project"]]
+                    edited_contact_df = st.data_editor(
+                        contact_df,
+                        num_rows="dynamic",
+                        use_container_width=True, hide_index=True,
+                        key="edit_new_contacts",
+                    )
+                    edited_contacts = _clean_rows(edited_contact_df)
 
                 # Action buttons
                 act_cols = st.columns([2, 2, 1])
@@ -734,10 +819,12 @@ elif page == "Submit Update":
                     if st.button("Approve All", type="primary", use_container_width=True):
                         from db import apply_phase_change
                         history_ids = []
-                        for change in changes:
+                        applied_changes = [c for c in edited_changes
+                                           if c.get("project_id") and c.get("field")]
+                        for change in applied_changes:
                             pid = change["project_id"]
                             field_changes = update_project(
-                                pid, {change["field"]: change["new_value"]},
+                                pid, {change["field"]: change.get("new_value")},
                                 st.session_state["pending_by"],
                             )
                             if field_changes:
@@ -751,10 +838,10 @@ elif page == "Submit Update":
                                 history_ids.append(hid)
 
                         # Apply phase-level changes, one history row per phase change
-                        for pc in phase_changes:
-                            pid = pc.get("project_id")
-                            if not pid:
-                                continue
+                        applied_phase_changes = [pc for pc in edited_phase_changes
+                                                 if pc.get("project_id")]
+                        for pc in applied_phase_changes:
+                            pid = pc["project_id"]
                             summary = apply_phase_change(pid, pc)
                             if summary.get("action") == "noop":
                                 continue
@@ -769,7 +856,8 @@ elif page == "Submit Update":
                             )
                             history_ids.append(hid)
 
-                        for c in contacts:
+                        applied_contacts = [c for c in edited_contacts if c.get("name")]
+                        for c in applied_contacts:
                             add_contact(
                                 name=c.get("name", ""),
                                 organization=c.get("organization"),
@@ -785,8 +873,9 @@ elif page == "Submit Update":
                             input_type="update",
                             history_ids=history_ids,
                         )
-                        total_applied = len(changes) + len(phase_changes)
-                        st.success(f"Applied {total_applied} change(s) ({len(changes)} project, {len(phase_changes)} phase).")
+                        total_applied = len(applied_changes) + len(applied_phase_changes)
+                        st.success(f"Applied {total_applied} change(s) "
+                                   f"({len(applied_changes)} project, {len(applied_phase_changes)} phase).")
                         del st.session_state["pending_result"]
                         st.rerun()
 
@@ -1190,42 +1279,47 @@ elif page == "Project Details":
 
         # ── Edit Project ──────────────────────────────────────────────────
         with st.expander("✏️ Edit project"):
-            e1, e2 = st.columns(2)
-            with e1:
-                ed_status = st.selectbox(
-                    "Status", VALID_STATUSES,
-                    index=VALID_STATUSES.index(p["status"]) if p.get("status") in VALID_STATUSES else 0,
-                    key=f"ed_status_{pid}",
-                )
-                ed_owner = st.selectbox(
-                    "Owner", [""] + TEAM_MEMBERS,
-                    index=(TEAM_MEMBERS.index(p["team_owner"]) + 1) if p.get("team_owner") in TEAM_MEMBERS else 0,
-                    key=f"ed_owner_{pid}",
-                )
-                ed_partner = st.text_input("Partner org", p.get("partner_org") or "", key=f"ed_partner_{pid}")
-                ed_deploy = st.text_input("Deployment type", p.get("deployment_type") or "", key=f"ed_deploy_{pid}")
-                ed_hardware = st.text_input("Hardware", p.get("hardware") or "", key=f"ed_hw_{pid}")
-            with e2:
-                ed_timeline = st.text_input("Timeline label", p.get("timeline_label") or "", key=f"ed_tl_{pid}")
-                ed_target = st.text_input("Target date (YYYY-MM-DD)", p.get("target_date") or "", key=f"ed_td_{pid}")
-                confidence_options = ["", "hard", "committed", "soft", "aspirational"]
-                cur_conf = p.get("target_confidence") or ""
-                ed_conf = st.selectbox(
-                    "Target confidence", confidence_options,
-                    index=confidence_options.index(cur_conf) if cur_conf in confidence_options else 0,
-                    key=f"ed_conf_{pid}",
-                )
-                ed_cost = st.number_input(
-                    "Estimated cost (USD)",
-                    value=float(p.get("estimated_cost") or 0.0),
-                    min_value=0.0, step=1000.0, format="%.0f",
-                    key=f"ed_cost_{pid}",
-                )
-            ed_blocker = st.text_input("Blocker", p.get("blocker") or "", key=f"ed_blk_{pid}")
-            ed_notes = st.text_area("Notes", p.get("notes") or "", height=100, key=f"ed_notes_{pid}")
-            ed_by = st.selectbox("Updated by", TEAM_MEMBERS + ["Other"], key=f"ed_by_{pid}")
+            with st.form(f"edit_project_form_{pid}", clear_on_submit=False):
+                e1, e2 = st.columns(2)
+                with e1:
+                    ed_status = st.selectbox(
+                        "Status", VALID_STATUSES,
+                        index=VALID_STATUSES.index(p["status"]) if p.get("status") in VALID_STATUSES else 0,
+                        key=f"ed_status_{pid}",
+                    )
+                    ed_owner = st.selectbox(
+                        "Owner", [""] + TEAM_MEMBERS,
+                        index=(TEAM_MEMBERS.index(p["team_owner"]) + 1) if p.get("team_owner") in TEAM_MEMBERS else 0,
+                        key=f"ed_owner_{pid}",
+                    )
+                    ed_partner = st.text_input("Partner org", p.get("partner_org") or "", key=f"ed_partner_{pid}")
+                    ed_deploy = st.text_input("Deployment type", p.get("deployment_type") or "", key=f"ed_deploy_{pid}")
+                    ed_hardware = st.text_input("Hardware", p.get("hardware") or "", key=f"ed_hw_{pid}")
+                with e2:
+                    ed_timeline = st.text_input("Timeline label", p.get("timeline_label") or "", key=f"ed_tl_{pid}")
+                    ed_target = st.text_input("Target date (YYYY-MM-DD)", p.get("target_date") or "", key=f"ed_td_{pid}")
+                    confidence_options = ["", "hard", "committed", "soft", "aspirational"]
+                    cur_conf = p.get("target_confidence") or ""
+                    ed_conf = st.selectbox(
+                        "Target confidence", confidence_options,
+                        index=confidence_options.index(cur_conf) if cur_conf in confidence_options else 0,
+                        key=f"ed_conf_{pid}",
+                    )
+                    ed_cost = st.number_input(
+                        "Estimated cost (USD)",
+                        value=float(p.get("estimated_cost") or 0.0),
+                        min_value=0.0, step=1000.0, format="%.0f",
+                        key=f"ed_cost_{pid}",
+                    )
+                ed_blocker = st.text_input("Blocker", p.get("blocker") or "", key=f"ed_blk_{pid}")
+                ed_notes = st.text_area("Notes", p.get("notes") or "", height=100, key=f"ed_notes_{pid}")
+                ed_by = st.selectbox("Updated by", TEAM_MEMBERS + ["Other"], key=f"ed_by_{pid}")
 
-            if st.button("Save changes", type="primary", key=f"ed_save_{pid}"):
+                save_clicked = st.form_submit_button(
+                    "Save changes", type="primary",
+                )
+
+            if save_clicked:
                 candidates = {
                     "status": ed_status,
                     "team_owner": ed_owner or None,

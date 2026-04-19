@@ -5,6 +5,8 @@ Authenticates via API key (set AZURE_OPENAI_API_KEY), falling back to Azure AD (
 """
 
 import json
+from datetime import date
+
 from openai import AzureOpenAI
 
 from config import (
@@ -98,6 +100,8 @@ PARSE_SYSTEM = """You are the SPARROW Installation Tracker assistant. Your job i
 unstructured text (emails, Teams messages, meeting notes, plain English updates) and extract
 structured project updates.
 
+TODAY'S DATE: {today}
+
 CURRENT PROJECTS (each with its phases indented below):
 {projects}
 
@@ -109,6 +113,10 @@ RULES:
    person names, track name, or any identifying information.
 2. Extract project-level field updates in `proposed_changes`: status, blocker, timeline_label,
    target_date, hardware, estimated_cost, deployment_type, team_owner, notes.
+   When dates are given only as day-of-month ("the 27th") or month+day ("May 4th"), resolve
+   them using TODAY'S DATE — pick the next future occurrence. If the text proposes a *set*
+   of candidate dates (e.g., "27th, or May 4th, 5th, or 7th"), set target_date to the
+   earliest candidate and mention the alternatives in notes.
 3. Extract PHASE-level updates in `phase_changes` when the input refers to a specific phase
    of a dev track or a deployment milestone (e.g., "Water SPARROW deployment in June 2026"
    refers to the deployment phase, not just the overall project). Each phase has a unique
@@ -182,6 +190,7 @@ def parse_input(text: str, submitted_by: str = None) -> dict:
     """Send unstructured text to Azure OpenAI, get structured project update proposal."""
     projects = get_all_projects()
     system = PARSE_SYSTEM.format(
+        today=date.today().isoformat(),
         projects=_projects_context(projects),
         statuses=", ".join(VALID_STATUSES),
     )
