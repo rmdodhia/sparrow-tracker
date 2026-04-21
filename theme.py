@@ -784,7 +784,7 @@ def inject_theme():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 
-def render_hero(total_projects: int, continents: int, countries: int, active: int):
+def render_hero(total_projects: int, continents: int, countries: int, active: int, completed: int = 0):
     """Render the hero banner with wildlife SVG and overlay stats."""
     st.markdown(
         f'''<div class="hero-banner">
@@ -794,6 +794,7 @@ def render_hero(total_projects: int, continents: int, countries: int, active: in
             <div class="hero-stat"><div class="num">{continents}</div><div class="lbl">Continents</div></div>
             <div class="hero-stat"><div class="num">{countries}</div><div class="lbl">Countries</div></div>
             <div class="hero-stat"><div class="num">{active}</div><div class="lbl">Active Deployments</div></div>
+            <div class="hero-stat"><div class="num">{completed}</div><div class="lbl">Completed</div></div>
         </div>
         </div>''',
         unsafe_allow_html=True,

@@ -285,8 +285,9 @@ if page == "Dashboard":
     projects = get_all_projects()
     continents = len(set(p["continent"] for p in projects))
     countries = len(set(p["country"] for p in projects))
-    active = sum(1 for p in projects if p["status"] == "Active")
-    render_hero(len(projects), continents, countries, active)
+    active = sum(1 for p in projects if (p["status"] or "").startswith("Active"))
+    completed = sum(1 for p in projects if p["status"] == "Complete")
+    render_hero(len(projects), continents, countries, active, completed)
 
     # ── Needs Attention (collapsible, click an item to open it) ───────────
     stale = get_stale_projects()
