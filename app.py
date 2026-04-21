@@ -381,30 +381,33 @@ if page == "Dashboard":
         unsafe_allow_html=True,
     )
 
-    stat_cols = st.columns(len(sorted_statuses))
-    for i, (status, count) in enumerate(sorted_statuses):
-        with stat_cols[i]:
-            is_active = st.session_state["dashboard_status_filter"] == [status]
-            if st.button(
-                f"{count}\n\n{status}",
-                key=f"stat_{status}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary",
-                help=f"Click to filter table to {status} projects (click again to clear).",
-            ):
-                st.session_state["dashboard_status_filter"] = (
-                    [] if is_active else [status]
-                )
-                st.rerun()
+    if sorted_statuses:
+        stat_cols = st.columns(len(sorted_statuses))
+        for i, (status, count) in enumerate(sorted_statuses):
+            with stat_cols[i]:
+                is_active = st.session_state["dashboard_status_filter"] == [status]
+                if st.button(
+                    f"{count}\n\n{status}",
+                    key=f"stat_{status}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                    help=f"Click to filter table to {status} projects (click again to clear).",
+                ):
+                    st.session_state["dashboard_status_filter"] = (
+                        [] if is_active else [status]
+                    )
+                    st.rerun()
 
-    st.markdown(
-        f'<div style="height:3px;margin:-6px 0 22px;background:linear-gradient(to right,'
-        + ','.join(f'{bar_color_map.get(s, COLORS["neutral"])} {i*100/len(sorted_statuses):.1f}%,'
-                   f'{bar_color_map.get(s, COLORS["neutral"])} {(i+1)*100/len(sorted_statuses):.1f}%'
-                   for i, (s, _) in enumerate(sorted_statuses))
-        + ')"></div>',
-        unsafe_allow_html=True,
-    )
+        st.markdown(
+            f'<div style="height:3px;margin:-6px 0 22px;background:linear-gradient(to right,'
+            + ','.join(f'{bar_color_map.get(s, COLORS["neutral"])} {i*100/len(sorted_statuses):.1f}%,'
+                       f'{bar_color_map.get(s, COLORS["neutral"])} {(i+1)*100/len(sorted_statuses):.1f}%'
+                       for i, (s, _) in enumerate(sorted_statuses))
+            + ')"></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("No project status data available yet.")
 
     # ── All Projects Table ────────────────────────────────────────────────
     st.markdown('<div class="section-title">All Projects</div>',
@@ -1314,7 +1317,6 @@ elif page == "Project Details":
                     )
                 ed_blocker = st.text_input("Blocker", p.get("blocker") or "", key=f"ed_blk_{pid}")
                 ed_notes = st.text_area("Notes", p.get("notes") or "", height=100, key=f"ed_notes_{pid}")
-                ed_by = st.selectbox("Updated by", TEAM_MEMBERS + ["Other"], key=f"ed_by_{pid}")
 
                 save_clicked = st.form_submit_button(
                     "Save changes", type="primary",
@@ -1344,13 +1346,12 @@ elif page == "Project Details":
                     st.info("No changes detected.")
                 else:
                     try:
-                        changes = update_project(pid, updates, ed_by)
+                        changes = update_project(pid, updates)
                         if changes:
                             add_history(
                                 pid, changes,
                                 source_text="Project Details edit",
                                 source_type="manual",
-                                updated_by=ed_by,
                                 llm_summary=f"Edited {', '.join(changes.keys())} via Project Details",
                             )
                         st.success(f"Saved {len(updates)} field(s).")
