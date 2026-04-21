@@ -1,6 +1,6 @@
 .env
 __pycache__/
-*.db
+
 # Reference mockups / scratch screenshots
 image.png
 Gemini_Generated_*.png
