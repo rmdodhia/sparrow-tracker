@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% set active_page = "timeline" %}
+{% block title %}Timeline — SPARROW Tracker{% endblock %}
+
+{% block head %}
+<style>
+/* Toolbar */
+.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+.toolbar-left { display: flex; align-items: center; gap: 10px; }
+.toolbar-right { display: flex; align-items: center; gap: 10px; }
+.filter-btn { padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid #e8e2d9; background: #fff; color: #6d6358; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.filter-btn:hover { border-color: #1b5e20; color: #1b5e20; }
+.filter-btn.active { background: #1b5e20; color: #fff; border-color: #1b5e20; }
+.zoom-btn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid #e8e2d9; background: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #4a4540; }
+.zoom-btn:hover { background: #f1ede8; }
+
+/* Legend */
+.legend { display: flex; gap: 16px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6d6358; font-weight: 500; }
+.legend-bar { width: 20px; height: 8px; border-radius: 3px; }
+
+/* Gantt */
+.gantt-card { background: #fff; border: 1px solid #e8e2d9; border-radius: 12px; overflow: hidden; }
+.gantt-wrap { overflow-x: auto; }
+.gantt { width: 100%; min-width: 1100px; border-collapse: collapse; }
+.section-row td { background: #faf8f5; font-size: 10px; font-weight: 700; color: #6d6358; text-transform: uppercase; letter-spacing: 0.7px; padding: 8px 16px; border-bottom: 1px solid #e8e2d9; border-top: 1px solid #e8e2d9; }
+.gantt .label-col { width: 220px; min-width: 220px; padding: 10px 16px; font-size: 13px; font-weight: 500; color: #2d2a26; border-bottom: 1px solid #f5f0ea; border-right: 1px solid #e8e2d9; background: #fff; vertical-align: middle; white-space: nowrap; }
+.label-col .loc { font-weight: 600; }
+.label-col .sub { font-size: 11px; color: #6d6358; font-weight: 400; }
+.gantt .chart-col { position: relative; height: 40px; border-bottom: 1px solid #f5f0ea; padding: 0; }
+
+/* Month headers */
+.month-header { display: flex; border-bottom: 1px solid #e8e2d9; }
+.month-header .mh { flex: 1; text-align: center; padding: 8px 0; font-size: 11px; font-weight: 600; color: #6d6358; border-right: 1px solid #f0ebe4; }
+.month-header .mh:last-child { border-right: none; }
+.month-header .mh.current { color: #1b5e20; background: rgba(27,94,32,0.04); }
+
+/* Bars */
+.bar-track { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.bar { position: absolute; top: 10px; height: 20px; border-radius: 4px; font-size: 10px; font-weight: 600; color: #fff; display: flex; align-items: center; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: opacity 0.15s; }
+.bar:hover { opacity: 0.85; }
+.bar.scoping { background: #8d6e63; }
+.bar.active { background: #2e7d32; }
+.bar.complete { background: #00695c; }
+.bar.descoped { background: #bdbdbd; }
+.bar.blocked { background: #c62828; }
+
+/* Today line */
+.today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #c62828; z-index: 5; pointer-events: none; }
+.today-label { position: absolute; top: -20px; transform: translateX(-50%); font-size: 9px; font-weight: 700; color: #c62828; background: #fff; padding: 1px 6px; border-radius: 3px; border: 1px solid #fce4ec; white-space: nowrap; }
+
+/* Grid lines */
+.grid-line { position: absolute; top: 0; bottom: 0; width: 1px; background: #f0ebe4; pointer-events: none; }
+
+/* Milestone */
+.milestone { position: absolute; top: 12px; width: 16px; height: 16px; background: #f9a825; transform: rotate(45deg); border-radius: 2px; z-index: 3; cursor: pointer; }
+.milestone:hover { opacity: 0.8; }
+
+/* Summary */
+.summary-row { background: #faf8f5; border-top: 2px solid #e8e2d9; }
+.summary-row td { padding: 14px 16px; font-size: 13px; font-weight: 600; color: #2d2a26; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title">Timeline</div>
+<p style="font-size:13px;color:#6d6358;margin-bottom:24px">Gantt view of all deployments and development tracks</p>
+
+<div class="toolbar">
+  <div class="toolbar-left">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="Active">Active</button>
+    <button class="filter-btn" data-filter="Scoping">Scoping</button>
+    <button class="filter-btn" data-filter="Complete">Complete</button>
+    <button class="filter-btn" data-filter="Blocked">Blocked</button>
+  </div>
+  <div class="toolbar-right">
+    <button class="filter-btn" style="gap:4px;display:inline-flex;align-items:center">
+      <span style="font-size:14px">&#x21BB;</span> Today
+    </button>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-bar" style="background:#8d6e63"></div> Scoping</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#2e7d32"></div> Active</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#00695c"></div> Complete</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#bdbdbd"></div> Descoped</div>
+  <div class="legend-item"><div class="legend-bar" style="background:#c62828"></div> Blocked</div>
+  <div class="legend-item"><div style="width:12px;height:12px;background:#f9a825;transform:rotate(45deg);border-radius:2px"></div> Milestone</div>
+  <div class="legend-item"><div style="width:16px;height:2px;background:#c62828"></div> Today</div>
+</div>
+
+<div class="gantt-card">
+  <!-- Month header -->
+  <div class="month-header">
+    <div class="mh" style="flex:0 0 220px;border-right:1px solid #e8e2d9;text-align:left;padding-left:16px;color:#2d2a26;font-weight:700">Project</div>
+    {% for m in months %}
+    <div class="mh {{ 'current' if loop.index == current_month }}">{{ m }} {{ year % 100 }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="gantt-wrap">
+  <table class="gantt">
+    <tbody>
+
+      {# ═══ DEVELOPMENT ═══ #}
+      {% if dev_projects %}
+      <tr class="section-row"><td colspan="2">DEVELOPMENT</td></tr>
+      {% for pid, data in dev_projects.items() %}
+      <tr data-status="{{ data.status }}">
+        <td class="label-col">
+          <div class="loc">{{ data.label }}</div>
+          {% if data.sub %}<div class="sub">{{ data.sub }}</div>{% endif %}
+        </td>
+        <td class="chart-col">
+          <div class="bar-track">
+            {% for i in range(11) %}
+            <div class="grid-line" style="left:{{ ((i + 1) * 8.33)|round(1) }}%"></div>
+            {% endfor %}
+            <div class="today-line" style="left:{{ today_pct }}%">
+              {% if loop.first %}<span class="today-label">Today</span>{% endif %}
+            </div>
+            {% for bar in data.bars %}
+            <div class="bar {{ bar.bar_class }}" style="left:{{ bar.left }}%;width:{{ bar.width }}%" title="{{ bar.title }}">{{ bar.label }}</div>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+
+      {# ═══ DEPLOYMENTS ═══ #}
+      {% if deploy_projects %}
+      <tr class="section-row"><td colspan="2">DEPLOYMENTS</td></tr>
+      {% for pid, data in deploy_projects.items() %}
+      <tr data-status="{{ data.status }}" data-health="{{ data.health }}">
+        <td class="label-col">
+          <div class="loc">{{ data.country }}{% if data.country and data.label %} &mdash; {% endif %}{{ data.label }}</div>
+          <div class="sub">{{ data.sub }}{% if data.sub and data.team_owner %} &middot; {% endif %}{{ data.team_owner }}</div>
+        </td>
+        <td class="chart-col">
+          <div class="bar-track">
+            {% for i in range(11) %}
+            <div class="grid-line" style="left:{{ ((i + 1) * 8.33)|round(1) }}%"></div>
+            {% endfor %}
+            <div class="today-line" style="left:{{ today_pct }}%"></div>
+            {% for bar in data.bars %}
+            <div class="bar {{ bar.bar_class }}" style="left:{{ bar.left }}%;width:{{ bar.width }}%" title="{{ bar.title }}">{{ bar.label }}</div>
+            {% endfor %}
+            {% if data.milestone_pct is defined %}
+            <div class="milestone" style="left:{{ data.milestone_pct }}%" title="Target: {{ data.target_date }}"></div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+
+      {# ═══ SUMMARY ═══ #}
+      <tr class="summary-row">
+        <td class="label-col" style="background:#faf8f5">{{ deploy_projects|length }} deployments &middot; {{ dev_projects|length }} dev tracks</td>
+        <td class="chart-col" style="background:#faf8f5;height:auto;padding:14px 16px">
+          <div style="display:flex;gap:20px;font-size:12px;color:#6d6358">
+            {% for status, count in status_counts.items() %}
+            <span><strong>{{ count }}</strong> {{ status|lower }}</span>
+            {% endfor %}
+          </div>
+        </td>
+      </tr>
+
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Filter buttons
+document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+    document.querySelectorAll('.gantt tr[data-status]').forEach(row => {
+      if (filter === 'all') {
+        row.style.display = '';
+      } else if (filter === 'Blocked') {
+        row.style.display = row.dataset.health === 'Blocked' ? '' : 'none';
+      } else {
+        row.style.display = row.dataset.status === filter ? '' : 'none';
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

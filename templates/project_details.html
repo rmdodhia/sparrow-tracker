@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% set active_page = "project_details" %}
+{% block title %}{{ p.project_id }} — SPARROW Tracker{% endblock %}
+
+{% block content %}
+
+  <!-- Breadcrumb -->
+  <div class="breadcrumb">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <span class="sep">/</span>
+    <a href="{{ url_for('dashboard') }}">Projects</a>
+    <span class="sep">/</span>
+    <span>{{ p.project_id }}</span>
+  </div>
+
+  <!-- Project Header -->
+  <div class="detail-header">
+    <div class="detail-top">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="detail-id">{{ p.project_id }}</span>
+        <span class="detail-name">{{ p.location }}, {{ p.country }}</span>
+        {% if p.status %}
+          <span class="pill {{ p.status|lower|replace(' ', '-') }}">{{ p.status }}</span>
+        {% endif %}
+        {% if p.health %}
+          <span class="pill {{ p.health|lower|replace(' ', '-') }}">{{ p.health }}</span>
+        {% endif %}
+        {% if p.priority %}
+          <span class="pill pri-{{ p.priority|lower }}">{{ p.priority|upper }}</span>
+        {% endif %}
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-outline">Edit</button>
+        <button class="btn btn-outline">Generate Report</button>
+      </div>
+    </div>
+    <div class="detail-sub">{{ p.partner_org }} &middot; {{ p.country }} &middot; {{ p.continent }}</div>
+    <div class="metrics">
+      <div class="metric">
+        <div class="lbl">Owner</div>
+        <div class="val"><span class="dot"></span>{{ p.team_owner or '—' }}</div>
+        <div class="sub">Project lead</div>
+      </div>
+      <div class="metric">
+        <div class="lbl">Target Date</div>
+        <div class="val">{{ p.target_date or '—' }}</div>
+        {% if target_sub %}
+          <div class="sub" style="color:{{ target_sub_color }}; font-weight:500">{{ target_sub }}</div>
+        {% endif %}
+      </div>
+      <div class="metric">
+        <div class="lbl">Estimated Cost</div>
+        <div class="val">{% if p.estimated_cost %}${{ '{:,.0f}'.format(p.estimated_cost|float) }}{% else %}—{% endif %}</div>
+        <div class="sub">USD</div>
+      </div>
+      <div class="metric">
+        <div class="lbl">Last Updated</div>
+        <div class="val">{{ p.last_updated|timeago if p.last_updated else '—' }}</div>
+        {% if p.updated_by %}
+          <div class="sub">by {{ p.updated_by }}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-col layout -->
+  <div class="two-col">
+
+    <!-- LEFT COLUMN -->
+    <div>
+      <!-- Project Information -->
+      <div class="card">
+        <div class="card-title">Project Information</div>
+        <div class="info-grid">
+          <div class="info-field">
+            <div class="lbl">Deployment Type</div>
+            <div class="val">{{ p.deployment_type or '—' }}</div>
+          </div>
+          <div class="info-field">
+            <div class="lbl">Hardware</div>
+            <div class="val">{{ p.hardware or '—' }}</div>
+          </div>
+          <div class="info-field">
+            <div class="lbl">Timeline</div>
+            <div class="val">{{ p.timeline_label or '—' }}</div>
+          </div>
+          <div class="info-field">
+            <div class="lbl">Confidence</div>
+            <div class="val">{{ p.target_confidence or '—' }}</div>
+          </div>
+          <div class="info-field full">
+            <div class="lbl">Blocker</div>
+            <div class="val"{% if p.blocker %} style="color:#c62828"{% endif %}>{{ p.blocker or 'None' }}</div>
+          </div>
+          <div class="info-field full">
+            <div class="lbl">Notes</div>
+            <div class="val" style="font-style:italic;color:#4a4540">{{ p.notes or '—' }}</div>
+          </div>
+          <div class="info-field full" style="border-bottom:none">
+            <div class="lbl">DevOps ID</div>
+            <div class="val">
+              {% if p.devops_id %}
+                <code style="font-family:'Cascadia Code',monospace;background:#f5f0ea;padding:1px 6px;border-radius:3px;font-size:12px">{{ p.devops_id }}</code>
+              {% else %}
+                —
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="card" style="padding-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:17px;font-weight:700;color:#2d2a26;letter-spacing:-0.2px">History</span>
+            <span style="font-size:12px;color:#6d6358">({{ history|length }} entries)</span>
+          </div>
+          <div class="filter-chips">
+            <button class="chip active" data-source="all">All</button>
+            <button class="chip" data-source="email">Email</button>
+            <button class="chip" data-source="manual">Manual</button>
+            <button class="chip" data-source="system">System</button>
+          </div>
+        </div>
+
+        <div class="timeline">
+          {% for entry in history %}
+          <div class="tl-entry" data-source="{{ entry.source_type }}">
+            <div class="tl-dot {% if entry.source_type in ['email', 'manual'] %}green{% elif entry.source_type == 'system' %}purple{% elif entry.source_type == 'teams_paste' %}amber{% else %}green{% endif %}"></div>
+            <div class="tl-card">
+              <div class="tl-meta">
+                <span>{{ entry.created_at|timeago }}</span>
+                <span class="tl-badge {% if entry.source_type == 'teams_paste' %}teams{% else %}{{ entry.source_type }}{% endif %}">
+                  {%- if entry.source_type == 'teams_paste' %}Teams{% elif entry.source_type == 'email' %}Email{% elif entry.source_type == 'manual' %}Manual{% elif entry.source_type == 'system' %}System{% else %}{{ entry.source_type }}{% endif -%}
+                </span>
+                {% if entry.updated_by %}
+                  <span>by <strong>{{ entry.updated_by }}</strong></span>
+                {% endif %}
+              </div>
+              {% if entry.llm_summary %}
+                <div class="tl-summary">{{ entry.llm_summary }}</div>
+              {% endif %}
+              {% if entry.source_text %}
+                <button class="tl-toggle">Show details</button>
+                <div class="tl-details">
+                  <div class="original-source">
+                    <div class="original-source-label">
+                      {%- if entry.source_type == 'email' %}Original email{% elif entry.source_type == 'teams_paste' %}Teams message{% elif entry.source_type == 'manual' %}Manual entry{% elif entry.source_type == 'system' %}System note{% else %}Source{% endif -%}
+                    </div>
+                    {{ entry.source_text }}
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="load-more">
+          <a href="#">Load more entries&hellip;</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div>
+      <!-- Contacts -->
+      <div class="card">
+        <div class="card-title">Contacts</div>
+        {% for c in contacts %}
+        <div class="contact-item">
+          <div class="contact-avatar" style="background:#2e7d32">{{ c.name[0]|upper if c.name else '?' }}</div>
+          <div>
+            <div class="contact-name">{{ c.name }}</div>
+            <div class="contact-role">{{ c.organization }}{% if c.role %} &middot; {{ c.role }}{% endif %}</div>
+            {% if c.email %}
+              <a class="contact-email" href="mailto:{{ c.email }}">{{ c.email }}</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% if not contacts %}
+          <div style="font-size:13px;color:#6d6358;padding:8px 0">No contacts yet.</div>
+        {% endif %}
+        <a class="add-link" href="#">+ Add contact</a>
+      </div>
+
+      <!-- Active Alerts -->
+      {% if nudges %}
+      <div class="card">
+        <div class="card-title">Active Alerts</div>
+        {% for nudge in nudges %}
+        <div class="alert-item" style="{% if not loop.last %}margin-bottom:16px{% endif %}">
+          <div class="alert-type">{{ nudge.severity }}</div>
+          <div class="alert-text">{{ nudge.detail }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Quick Actions -->
+      <div class="card">
+        <div class="card-title">Quick Actions</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <a href="{{ url_for('submit_update') }}" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px 18px;text-align:center">Submit update for this project</a>
+          <a class="quick-action-link" href="#">Export history</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Toggle timeline details
+document.querySelectorAll('.tl-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const details = btn.nextElementSibling;
+    details.classList.toggle('open');
+    btn.textContent = details.classList.contains('open') ? 'Hide details' : 'Show details';
+  });
+});
+
+// Filter chips for history
+document.querySelectorAll('.chip[data-source]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip[data-source]').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    const source = chip.dataset.source;
+    document.querySelectorAll('.tl-entry[data-source]').forEach(entry => {
+      entry.style.display = (source === 'all' || entry.dataset.source === source) ? '' : 'none';
+    });
+  });
+});
+</script>
+{% endblock %}

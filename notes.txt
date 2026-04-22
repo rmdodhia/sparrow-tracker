@@ -1,3 +1,0 @@
-notes.txt
-
-Allow summary stats on top of dashboard to filter the table below in the dashboard.

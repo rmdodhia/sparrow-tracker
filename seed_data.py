@@ -53,38 +53,39 @@ def make_project_id(continent, country, location, seen: set) -> str:
 # ── Status normalization ──────────────────────────────────────────────────────
 
 def normalize_status(raw_status, notes=""):
-    """Map the messy Excel STATUS to a clean enum value. Returns (status, extra_notes)."""
+    """Map the messy Excel STATUS to (lifecycle_status, health, extra_notes)."""
     if not raw_status:
-        return "Scoping", ""
+        return "Scoping", "On Track", ""
 
     s = str(raw_status).strip()
     sl = s.lower()
 
     if "complete" in sl or sl == "done":
-        return "Complete", ""
+        return "Complete", "On Track", ""
+    if "descoped" in sl:
+        return "Descoped", "On Track", ""
     if "installed" in sl:
-        return "Installed", ""
+        return "Active", "Waiting on Partner", ""
     if "active" in sl:
-        return "Active", ""
+        return "Active", "On Track", ""
     if "approved" in sl:
-        return "Approved", ""
+        return "Active", "Waiting on Us", ""
     if "on hold" in sl:
-        return "On Hold", s  # keep the reason
+        return "Active", "Waiting on Partner", s
     if "blocked" in sl:
-        return "Blocked", s
-    if "at risk" in sl or "descoped" in sl:
-        return "At Risk", s
+        return "Active", "Blocked", s
+    if "at risk" in sl:
+        return "Active", "Blocked", s
     if "waiting" in sl:
-        return "Waiting", s
+        return "Active", "Waiting on Partner", s
     if "on track" in sl:
-        return "Active", s if len(s) > 20 else ""  # long text = extra notes
+        return "Active", "On Track", s if len(s) > 20 else ""
     if "scoping" in sl or "early scoping" in sl:
-        return "Scoping", ""
-    # If status looks like it has narrative text (>50 chars), it's probably misplaced data
+        return "Scoping", "On Track", ""
     if len(s) > 50:
-        return "Scoping", s
+        return "Scoping", "On Track", s
 
-    return "Scoping", ""
+    return "Scoping", "On Track", ""
 
 
 # ── Timeline parsing ──────────────────────────────────────────────────────────
@@ -224,7 +225,7 @@ def seed():
                 notes = override["notes"]
 
         # Normalize
-        status, extra_notes = normalize_status(raw_status, notes)
+        status, health, extra_notes = normalize_status(raw_status, notes)
         if extra_notes and extra_notes not in (notes or ""):
             notes = f"{extra_notes}; {notes}" if notes else extra_notes
 
@@ -264,7 +265,8 @@ def seed():
             "location":          location.strip(),
             "partner_org":       partner_org.strip(),
             "status":            status,
-            "blocker":           extra_notes if status in ("Blocked", "On Hold", "Waiting", "At Risk") else None,
+            "health":            health,
+            "blocker":           extra_notes if health in ("Blocked", "Waiting on Partner", "Waiting on Us") else None,
             "deployment_type":   str(deploy_type).strip(),
             "timeline_label":    timeline_label,
             "target_date":       target_date,

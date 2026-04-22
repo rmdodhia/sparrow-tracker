@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+{% block title %}Settings — SPARROW Tracker{% endblock %}
+
+{% block content %}
+<div class="page-title">Settings</div>
+<p style="font-size:13px;color:#6d6358;margin-bottom:28px">Configure monitoring, team, and integrations</p>
+
+<div class="card">
+  <div class="card-title">Team Members</div>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Role</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for member in team %}
+      <tr>
+        <td style="font-weight:500">{{ member }}</td>
+        <td>
+          <select class="form-select" style="width:auto;padding:4px 8px;font-size:13px">
+            <option>Admin</option>
+            <option selected>Member</option>
+          </select>
+        </td>
+        <td><button class="btn btn-danger" style="padding:4px 12px;font-size:12px">Remove</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:16px">
+    <button class="btn btn-outline">+ Add team member</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Staleness Thresholds</div>
+  <table>
+    <thead>
+      <tr><th>Health Status</th><th>Days Until Stale</th></tr>
+    </thead>
+    <tbody>
+      {% for status, days in thresholds.items() %}
+      <tr>
+        <td>{{ status }}</td>
+        <td>{{ days }} days</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-title">Monitor</div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <button class="btn btn-primary">Run Monitor Now</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#6d6358;cursor:pointer">
+      <input type="checkbox" checked style="accent-color:#1b5e20"> Use LLM for nudge generation
+    </label>
+  </div>
+</div>
+{% endblock %}

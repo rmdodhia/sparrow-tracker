@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SPARROW Tracker{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo">
+    <span class="icon">&#x1F426;</span>
+    <div><div class="text">SPARROW</div><div class="sub">Installation Tracker</div></div>
+  </div>
+  <nav>
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active_page == 'dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('submit_update') }}" class="{{ 'active' if active_page == 'submit_update' }}">Submit Update</a>
+    <a href="{{ url_for('timeline') }}" class="{{ 'active' if active_page == 'timeline' }}">Timeline</a>
+    <a href="#" class="{{ 'active' if active_page == 'project_details' }}">Project Details</a>
+    <a href="{{ url_for('reports') }}" class="{{ 'active' if active_page == 'reports' }}">Reports</a>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page == 'settings' }}">Settings</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div>{{ total_projects }} Projects &middot; {{ today.strftime('%B %d, %Y') }}</div>
+    <div class="user">
+      <div class="avatar">RD</div>
+      <div>
+        <div class="user-name">Rahul Dodhia</div>
+        <div class="user-email">radodhia@microsoft.com</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  {% block content %}{% endblock %}
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

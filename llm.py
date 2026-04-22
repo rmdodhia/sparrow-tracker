@@ -11,7 +11,7 @@ from openai import AzureOpenAI
 
 from config import (
     AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION,
-    AZURE_OPENAI_API_KEY, VALID_STATUSES,
+    AZURE_OPENAI_API_KEY, VALID_STATUSES, VALID_HEALTH, PHASE_STATUSES,
 )
 from db import get_all_projects, get_project_history, get_recent_history, get_phases
 
@@ -77,6 +77,7 @@ def _projects_context(projects=None, include_phases: bool = True):
             f"- {p['project_id']} [{item_type}]: "
             + (f"{p.get('track_name') or ''} " if item_type == "dev_track" else f"{p.get('location') or ''} ({p.get('country') or ''}) ")
             + f"| Partner: {p.get('partner_org') or '—'} | Status: {p['status']} | "
+            f"Health: {p.get('health') or 'On Track'} | "
             f"Owner: {p.get('team_owner') or 'unassigned'} | "
             f"Timeline: {p.get('timeline_label') or 'TBD'} | "
             f"Target: {p.get('target_date') or 'none'} | "
@@ -105,14 +106,17 @@ TODAY'S DATE: {today}
 CURRENT PROJECTS (each with its phases indented below):
 {projects}
 
-VALID STATUSES (use only these): {statuses}
-VALID PHASE STATUSES: Planned, In Progress, Done, Blocked, At Risk, On Hold, Cancelled
+VALID STATUSES (lifecycle stage, use only these): {statuses}
+VALID HEALTH VALUES (how it's going, use only these): {health_values}
+VALID PHASE STATUSES: {phase_statuses}
 
 RULES:
 1. Identify which project(s) the input relates to by matching location, partner, country,
    person names, track name, or any identifying information.
-2. Extract project-level field updates in `proposed_changes`: status, blocker, timeline_label,
-   target_date, hardware, estimated_cost, deployment_type, team_owner, notes.
+2. Extract project-level field updates in `proposed_changes`: status, health, blocker,
+   timeline_label, target_date, hardware, estimated_cost, deployment_type, team_owner, notes.
+   - `status` is the lifecycle stage: Scoping → Active → Complete or Descoped.
+   - `health` captures how it's going: On Track, Waiting on Partner, Waiting on Us, Blocked.
    When dates are given only as day-of-month ("the 27th") or month+day ("May 4th"), resolve
    them using TODAY'S DATE — pick the next future occurrence. If the text proposes a *set*
    of candidate dates (e.g., "27th, or May 4th, 5th, or 7th"), set target_date to the
@@ -122,6 +126,7 @@ RULES:
    refers to the deployment phase, not just the overall project). Each phase has a unique
    numeric `id` shown above — use that `id` for updates and deletes. To create a new phase,
    set phase_id to null and action to "create".
+   Phase statuses are simple: Todo, Doing, Done.
 4. When a date phrase like "deployment in June 2026" maps to an existing phase (by name or
    phase_key), update that phase's start_date / end_date — do NOT only update the project's
    target_date. A phase end_date of "June 2026" normalizes to 2026-06-30.
@@ -131,7 +136,7 @@ RULES:
 7. If the input doesn't clearly map to a project, set match_confidence to "low".
 8. If the input is a question rather than an update, set input_type to "question".
 9. Preserve important context in a one-line llm_summary.
-10. For status changes, only use statuses from the VALID STATUSES list.
+10. For status changes, only use values from VALID STATUSES and VALID HEALTH VALUES.
 
 Respond with ONLY valid JSON (no markdown fencing) in this exact format:
 {{
@@ -193,6 +198,8 @@ def parse_input(text: str, submitted_by: str = None) -> dict:
         today=date.today().isoformat(),
         projects=_projects_context(projects),
         statuses=", ".join(VALID_STATUSES),
+        health_values=", ".join(VALID_HEALTH),
+        phase_statuses=", ".join(PHASE_STATUSES),
     )
 
     raw = _chat(system, text).strip()
