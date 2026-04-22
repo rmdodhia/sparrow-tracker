@@ -69,10 +69,10 @@ Email Rahul (radodhia@microsoft.com) or file an issue on
 ### Stack
 
 - **Streamlit** for the UI (single-file `app.py` with a custom Fluent-style theme in `theme.py`).
-- **SQLite** for storage (`sparrow_tracker.db`, schema in `db.py`).
+- **SQLite** for local dev storage, **Azure SQL** for production (`db.py` auto-selects based on `AZURE_SQL_CONNECTION_STRING`).
 - **Azure OpenAI** for update parsing and the Ask-SPARROW Q&A (`llm.py`).
 - **Azure DevOps REST API** for sprint + work-item sync (`devops_sync.py`).
-- **IMAP** for optional email ingestion (`email_ingest.py`).
+- **Microsoft Graph** for email ingestion in production (`graph_email.py`), with IMAP as legacy fallback (`email_ingest.py`).
 
 ### Layout
 
@@ -80,13 +80,15 @@ Email Rahul (radodhia@microsoft.com) or file an issue on
 app.py              Streamlit entry point (all pages)
 theme.py            CSS, HTML helpers, pill/badge/card renderers
 config.py           Env vars, status enum, FY helpers, team list
-db.py               SQLite schema + query functions
+db.py               Database layer (SQLite + Azure SQL dual backend)
 llm.py              Azure OpenAI client + update parsing prompt
 devops_sync.py      Azure DevOps WIQL + iteration sync
-email_ingest.py     IMAP poller that feeds Submit Update
+graph_email.py      Microsoft Graph email client (production)
+email_ingest.py     Email ingestion router (Graph or IMAP)
 monitor.py          Staleness + deadline nudge generator
 notifications.py    SMTP sender for nudges
 seed_data.py        Seeds the DB with the current installation list
+infra/              Bicep IaC templates + deployment script
 mockups/            v2 HTML mockups — the app is expected to match these
 ```
 
@@ -144,10 +146,13 @@ Fill in `.env`:
    can use Entra ID via `DefaultAzureCredential`. Default org/project are
    `onecela` / `AI For Good Lab` — override with `AZURE_DEVOPS_ORG` /
    `AZURE_DEVOPS_PROJECT` if you're pointing elsewhere.
-3. **IMAP** (optional, for email-forwarding ingestion): set `IMAP_HOST`,
-   `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`. Microsoft 365 mailboxes now require
-   Microsoft Graph instead — support is in progress.
-4. **SMTP** (optional, for nudge emails): set the `SPARROW_SMTP_*` vars.
+3. **Microsoft Graph** (recommended for email ingestion): set `GRAPH_CLIENT_ID`,
+   `GRAPH_CLIENT_SECRET`, `GRAPH_TENANT_ID`, `GRAPH_USER_EMAIL`. Requires an
+   app registration with `Mail.ReadWrite` (Application) permission and admin
+   consent. See [Deploying to Azure](#deploying-to-azure) below.
+4. **IMAP** (legacy fallback, used when Graph is not configured): set `IMAP_HOST`,
+   `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`.
+5. **SMTP** (optional, for nudge emails): set the `SPARROW_SMTP_*` vars.
 
 ### Environment variables
 
@@ -157,17 +162,27 @@ Fill in `.env`:
 | `AZURE_OPENAI_DEPLOYMENT` | yes | e.g. `gpt-54` |
 | `AZURE_OPENAI_API_KEY` | yes | |
 | `AZURE_OPENAI_API_VERSION` | no | Defaults to `2024-10-21` |
+| `AZURE_SQL_CONNECTION_STRING` | for Azure SQL | If set, uses Azure SQL instead of SQLite |
+| `GRAPH_CLIENT_ID` | for email | App registration client ID |
+| `GRAPH_CLIENT_SECRET` | for email | App registration client secret |
+| `GRAPH_TENANT_ID` | for email | Microsoft Entra tenant ID |
+| `GRAPH_USER_EMAIL` | for email | Mailbox to read (e.g. `sparrow-tracker@microsoft.com`) |
 | `AZURE_DEVOPS_ORG` | no | Defaults to `onecela` |
 | `AZURE_DEVOPS_PROJECT` | no | Defaults to `AI For Good Lab` |
 | `AZURE_DEVOPS_PAT` | no | Optional PAT override. If unset, auth uses Entra ID via `DefaultAzureCredential` (run `az login` once on dev machines). |
-| `IMAP_HOST` / `_PORT` / `_USER` / `_PASS` | for email | Inbox that forwards updates |
+| `IMAP_HOST` / `_PORT` / `_USER` / `_PASS` | legacy email | Fallback if Graph is not configured |
 | `SPARROW_SMTP_*` | for nudges | Outgoing mail for staleness alerts |
 
 `.env` is gitignored. Never commit it.
 
 ### Database
 
-SQLite file at the repo root. Tables:
+Two backends, auto-selected by the `AZURE_SQL_CONNECTION_STRING` env var:
+
+- **SQLite** (default, local dev) — `sparrow_tracker.db` at the repo root. Gitignored.
+- **Azure SQL** (production) — set `AZURE_SQL_CONNECTION_STRING` in `.env`.
+
+Tables:
 
 - `projects` — one row per installation
 - `history` — append-only log of every status change / note
@@ -175,6 +190,7 @@ SQLite file at the repo root. Tables:
 - `raw_inputs` — unparsed emails/notes before LLM extraction
 - `nudges` — active staleness and deadline alerts
 - `devops_work_items` — DevOps sync cache (sprint = `iteration_path` field on each row)
+- `phases` — timeline phases per project (Gantt chart data)
 
 Schema lives in `db.py::init_db()`. It's idempotent — safe to re-run.
 
@@ -203,3 +219,75 @@ PRs welcome. Before opening one:
 1. Re-run `streamlit run app.py` and click through every page.
 2. If you touched layout, compare against the matching `mockups/v2_*.html`.
 3. Keep `db.py` migrations additive — there's no migration framework.
+
+---
+
+## Deploying to Azure
+
+The app is designed to run on **Azure App Service** (Linux, Python 3.11) with
+**Azure SQL Database** and **Microsoft Graph** for email ingestion.
+
+### Prerequisites
+
+- Azure CLI authenticated to the Microsoft tenant (`az login --tenant 72f988bf-...`)
+- PIM activated for the target subscription
+- App registration with `Mail.ReadWrite` (Application) permission + admin consent
+
+### Infrastructure (Bicep)
+
+Bicep templates are in `infra/`. They provision:
+
+- **App Service Plan** (B1 Linux) + **Web App** (`sparrow-tracker`)
+- **Azure SQL Server** + **Database** (Basic tier, 2 GB)
+- System-assigned managed identity on the Web App
+
+```bash
+# Deploy everything (prompts for SQL password)
+./infra/deploy.sh <sql-admin-password> [graph-client-secret]
+```
+
+### Post-deployment
+
+```bash
+# 1. Set the remaining app settings (OpenAI, DevOps)
+az webapp config appsettings set \
+  --resource-group ai4gl-sparrow-prod-rg \
+  --name sparrow-tracker \
+  --settings \
+    AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/ \
+    AZURE_OPENAI_DEPLOYMENT=gpt-54 \
+    AZURE_OPENAI_API_KEY=your-key
+
+# 2. Deploy the app code
+az webapp deploy \
+  --resource-group ai4gl-sparrow-prod-rg \
+  --name sparrow-tracker \
+  --src-path .
+
+# 3. Initialize the database schema
+python -c "from db import init_db; init_db()"
+
+# 4. (Optional) Seed with data
+python seed_data.py
+```
+
+### App Registration Setup
+
+The app registration (`5f813bb9-d2c4-4246-ba36-3c394a0ade39`) needs:
+
+```bash
+# Add Mail.ReadWrite (Application) permission
+az ad app permission add \
+  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39 \
+  --api 00000003-0000-0000-c000-000000000000 \
+  --api-permissions e2a3a72e-5f79-4c64-b1b1-878b674786c9=Role
+
+# Create a client secret (save the output!)
+az ad app credential reset \
+  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39 \
+  --append --display-name "sparrow-tracker-app-service" --years 1
+
+# Grant admin consent (requires tenant admin)
+az ad app permission admin-consent \
+  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39
+```
