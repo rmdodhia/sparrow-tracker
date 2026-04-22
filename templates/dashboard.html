@@ -16,10 +16,54 @@
 
 {# ── Attention Banner ─────────────────────────────────── #}
 {% if attention %}
-<div class="attention">
-  <div class="dot"></div>
-  <strong>{{ attention | length }} project{{ 's' if attention | length != 1 }} need{{ '' if attention | length != 1 else 's' }} attention</strong>
-</div>
+<details class="attention" {% if attention|length <= 3 %}open{% endif %}>
+  <summary>
+    <div class="attention-summary">
+      <div class="dot"></div>
+      <div>
+        <strong>{{ attention | length }} project{{ 's' if attention | length != 1 }} need{{ '' if attention | length != 1 else 's' }} attention</strong>
+        <div class="attention-subtitle">Expand to see which projects are blocked by staleness or approaching deadlines.</div>
+      </div>
+    </div>
+    <span class="attention-toggle" aria-hidden="true"></span>
+  </summary>
+  <div class="attention-list">
+    {% for item in attention %}
+    <a class="attention-item" href="{{ url_for('project_details', project_id=item.project_id) }}">
+      <div class="attention-item-main">
+        <div class="attention-item-title-row">
+          <span class="attention-project-id">{{ item.project_id }}</span>
+          <span class="attention-project-name">{{ item.track_name or item.location or item.partner_org or 'Unnamed project' }}</span>
+        </div>
+        <div class="attention-item-meta">
+          {% if item.partner_org %}<span>{{ item.partner_org }}</span>{% endif %}
+          {% if item.country %}<span>{{ item.country }}</span>{% endif %}
+          {% if item.team_owner %}<span>Owner: {{ item.team_owner }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="attention-reason-wrap">
+        {% if item.days_since_update is defined %}
+        <span class="attention-type stale">Stale</span>
+        <div class="attention-reason">No update for {{ item.days_since_update }} days. Threshold is {{ item.threshold }} days for {{ item.health or 'this status' }}.</div>
+        {% else %}
+        <span class="attention-type deadline {{ item.alert_severity or 'warning' }}">{{ 'Overdue' if item.days_until_deadline < 0 else 'Deadline' }}</span>
+        <div class="attention-reason">
+          {% if item.days_until_deadline < 0 %}
+          Target date passed {{ item.days_until_deadline | abs }} day{{ 's' if item.days_until_deadline | abs != 1 }} ago.
+          {% elif item.days_until_deadline == 0 %}
+          Target date is today.
+          {% else %}
+          Target date is in {{ item.days_until_deadline }} day{{ 's' if item.days_until_deadline != 1 }}.
+          {% endif %}
+          {% if item.target_date %} Due {{ item.target_date }}.{% endif %}
+          {% if item.blocker %} Blocker: {{ item.blocker }}{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</details>
 {% endif %}
 
 {# ── Stat Cards ───────────────────────────────────────── #}
