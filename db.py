@@ -92,6 +92,15 @@ def _fetchone_dict(cursor):
     return dict(row)
 
 
+def _last_insert_id(cursor, conn):
+    """Get the last inserted IDENTITY/AUTOINCREMENT ID, cross-backend."""
+    if DB_BACKEND == "azure_sql":
+        cursor.execute("SELECT SCOPE_IDENTITY()")
+        row = cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+    return cursor.lastrowid
+
+
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 def init_db():
@@ -529,12 +538,13 @@ def add_history(project_id, changes: dict, source_text: str = None,
             (project_id, ts, updated_by, source_type, source_text,
              json.dumps(changes), llm_summary),
         )
+        new_id = _last_insert_id(cur, conn)
         # Auto-resolve any active nudges for this project
         conn.execute(
             "UPDATE nudges SET resolved = 1, resolved_by_history_id = ? WHERE project_id = ? AND resolved = 0",
-            (cur.lastrowid, project_id),
+            (new_id, project_id),
         )
-        return cur.lastrowid
+        return new_id
 
 
 def get_project_history(project_id, limit=50):
@@ -751,7 +761,7 @@ def upsert_phases(project_id: str, rows: list):
                      payload["start_date"], payload["end_date"], payload["status"],
                      payload["depends_on_phase_id"], payload["notes"], now),
                 )
-                deltas["created"].append({"id": cur.lastrowid, **payload})
+                deltas["created"].append({"id": _last_insert_id(cur, conn), **payload})
 
         for row_id, row in existing.items():
             if row_id not in seen_ids:
@@ -797,7 +807,7 @@ def apply_phase_change(project_id: str, change: dict):
                  updates.get("status") or "Planned",
                  updates.get("notes"), now),
             )
-            return {"action": "create", "phase_id": cur.lastrowid, "field_updates": updates}
+            return {"action": "create", "phase_id": _last_insert_id(cur, conn), "field_updates": updates}
 
         # update
         if not phase_id:

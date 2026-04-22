@@ -176,7 +176,7 @@ ROW_OVERRIDES = {
 
 
 def seed():
-    xlsx_path = os.path.join(os.path.dirname(__file__), "..", "SPARROW_BACKLOG_OF_PRIORITIES.xlsx")
+    xlsx_path = os.path.join(os.path.dirname(__file__), "SPARROW_BACKLOG_OF_PRIORITIES.xlsx")
     if not os.path.exists(xlsx_path):
         print(f"ERROR: Excel file not found at {xlsx_path}")
         sys.exit(1)
