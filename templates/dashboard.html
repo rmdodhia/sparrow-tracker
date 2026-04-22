@@ -69,7 +69,7 @@
 {# ── Stat Cards ───────────────────────────────────────── #}
 <div class="stats">
   {% for status, count in summary.items() %}
-  <div class="stat-card {{ status | lower }}">
+  <div class="stat-card {{ status | lower }}" data-filter-stage="{{ status }}">
     <div class="count">{{ count }}</div>
     <div class="label">{{ status }}</div>
   </div>
@@ -97,6 +97,29 @@
     <span>All Projects</span>
     <button class="btn btn-primary">Save changes</button>
   </div>
+  <div class="table-filters">
+    <input id="dashboard-search" class="form-input table-filter-input" type="search" placeholder="Filter by project, location, partner, owner...">
+    <select id="dashboard-stage-filter" class="form-select table-filter-select">
+      <option value="">All stages</option>
+      {% for status in summary.keys() %}
+      <option value="{{ status }}">{{ status }}</option>
+      {% endfor %}
+    </select>
+    <select id="dashboard-health-filter" class="form-select table-filter-select">
+      <option value="">All statuses</option>
+      {% for health in VALID_HEALTH %}
+      <option value="{{ health }}">{{ health }}</option>
+      {% endfor %}
+    </select>
+    <select id="dashboard-priority-filter" class="form-select table-filter-select">
+      <option value="">All priorities</option>
+      {% for priority in VALID_PRIORITIES %}
+      <option value="{{ priority }}">{{ priority }}</option>
+      {% endfor %}
+    </select>
+    <button id="dashboard-clear-filters" type="button" class="btn btn-outline">Clear filters</button>
+  </div>
+  <div class="table-filter-summary" id="dashboard-filter-summary">Showing all {{ projects|length }} projects</div>
   <table>
     <thead>
       <tr>
@@ -110,9 +133,14 @@
         <th>Target</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="dashboard-projects-body">
       {% for p in projects %}
-      <tr>
+      <tr
+        data-stage="{{ p.status or '' }}"
+        data-health="{{ p.health or '' }}"
+        data-priority="{{ p.priority or '' }}"
+        data-search="{{ (p.project_id or '') ~ ' ' ~ (p.location or '') ~ ' ' ~ (p.partner_org or '') ~ ' ' ~ (p.team_owner or '') ~ ' ' ~ (p.country or '') }}"
+      >
         <td><a href="{{ url_for('project_details', project_id=p.project_id) }}"><code style="color:#1b5e20;background:#e8f5e9;padding:2px 6px;border-radius:3px;font-size:11px">{{ p.project_id }}</code></a></td>
         <td>{{ p.location }}</td>
         <td>{{ p.partner_org }}</td>
@@ -127,4 +155,76 @@
   </table>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const rows = Array.from(document.querySelectorAll('#dashboard-projects-body tr'));
+  const searchInput = document.getElementById('dashboard-search');
+  const stageFilter = document.getElementById('dashboard-stage-filter');
+  const healthFilter = document.getElementById('dashboard-health-filter');
+  const priorityFilter = document.getElementById('dashboard-priority-filter');
+  const clearButton = document.getElementById('dashboard-clear-filters');
+  const summary = document.getElementById('dashboard-filter-summary');
+  const statCards = Array.from(document.querySelectorAll('.stat-card'));
+
+  function normalize(value) {
+    return (value || '').toString().trim().toLowerCase();
+  }
+
+  function applyFilters() {
+    const searchTerm = normalize(searchInput.value);
+    const stageValue = stageFilter.value;
+    const healthValue = healthFilter.value;
+    const priorityValue = priorityFilter.value;
+    let visibleCount = 0;
+
+    rows.forEach((row) => {
+      const matchesSearch = !searchTerm || normalize(row.dataset.search).includes(searchTerm);
+      const matchesStage = !stageValue || row.dataset.stage === stageValue;
+      const matchesHealth = !healthValue || row.dataset.health === healthValue;
+      const matchesPriority = !priorityValue || row.dataset.priority === priorityValue;
+      const visible = matchesSearch && matchesStage && matchesHealth && matchesPriority;
+      row.hidden = !visible;
+      if (visible) {
+        visibleCount += 1;
+      }
+    });
+
+    summary.textContent = visibleCount === rows.length
+      ? `Showing all ${rows.length} projects`
+      : `Showing ${visibleCount} of ${rows.length} projects`;
+
+    statCards.forEach((card) => {
+      const cardStage = card.dataset.filterStage || '';
+      const active = !!stageValue && cardStage === stageValue;
+      card.classList.toggle('active-filter', active);
+    });
+  }
+
+  [searchInput, stageFilter, healthFilter, priorityFilter].forEach((control) => {
+    control.addEventListener('input', applyFilters);
+    control.addEventListener('change', applyFilters);
+  });
+
+  clearButton.addEventListener('click', () => {
+    searchInput.value = '';
+    stageFilter.value = '';
+    healthFilter.value = '';
+    priorityFilter.value = '';
+    applyFilters();
+  });
+
+  statCards.forEach((card) => {
+    const stage = card.dataset.filterStage;
+    card.addEventListener('click', () => {
+      stageFilter.value = stageFilter.value === stage ? '' : stage;
+      applyFilters();
+    });
+  });
+
+  applyFilters();
+})();
+</script>
 {% endblock %}

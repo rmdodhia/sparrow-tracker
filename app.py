@@ -163,9 +163,9 @@ def project_details(project_id):
 def submit_update():
     result = None
     if request.method == "POST":
-        text = request.form.get("text", "")
-        input_type = request.form.get("input_type", "email")
-        submitted_by = request.form.get("submitted_by", "Rahul")
+        text = request.form.get("update_text") or request.form.get("text", "")
+        input_type = "manual"
+        submitted_by = request.form.get("submitter") or request.form.get("submitted_by", "Manual")
         if text and llm_available:
             from llm import parse_input
             result = parse_input(text, submitted_by)
@@ -229,13 +229,22 @@ def save_project():
 @app.route("/api/ask", methods=["POST"])
 def ask_sparrow():
     """Handle Ask SPARROW questions."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     question = data.get("question", "")
-    if not question or not llm_available:
-        return jsonify({"answer": "LLM not configured."})
-    from llm import parse_input, answer_question
-    parsed = parse_input(question, "Ask SPARROW")
-    answer = parsed.get("question_answer") or answer_question(question)
+    if not question:
+        return jsonify({"answer": "Enter a question first."}), 400
+    if not llm_available:
+        return jsonify({"answer": "Ask SPARROW is offline. Configure Azure OpenAI in .env."}), 503
+
+    from llm import answer_question
+
+    try:
+        answer = answer_question(question)
+    except Exception:
+        return jsonify({
+            "answer": "Ask SPARROW could not reach Azure OpenAI. Check the endpoint and API key in .env."
+        }), 502
+
     add_raw_input(question, input_type="question")
     return jsonify({"answer": answer})
 

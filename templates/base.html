@@ -22,6 +22,35 @@
     <a href="{{ url_for('reports') }}" class="{{ 'active' if active_page == 'reports' }}">Reports</a>
     <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page == 'settings' }}">Settings</a>
   </nav>
+  <div class="sidebar-tools">
+    <section class="ask-sparrow-card" aria-labelledby="ask-sparrow-title">
+      <div class="ask-sparrow-header">
+        <div>
+          <div class="ask-sparrow-eyebrow">Azure OpenAI</div>
+          <div class="ask-sparrow-title" id="ask-sparrow-title">Ask SPARROW</div>
+        </div>
+        <span class="ask-sparrow-status {{ 'online' if llm_available else 'offline' }}">{{ 'Ready' if llm_available else 'Offline' }}</span>
+      </div>
+      <div class="ask-sparrow-copy">Ask about blockers, deadlines, owners, or recent changes across the tracker.</div>
+      <form id="ask-sparrow-form" class="ask-sparrow-form">
+        <textarea
+          id="ask-sparrow-question"
+          class="form-textarea ask-sparrow-textarea"
+          placeholder="What is blocked right now?"
+          {% if not llm_available %}disabled{% endif %}
+        ></textarea>
+        <button
+          type="submit"
+          class="btn btn-primary ask-sparrow-submit"
+          {% if not llm_available %}disabled{% endif %}
+        >Ask</button>
+      </form>
+      <div id="ask-sparrow-answer" class="ask-sparrow-answer" hidden></div>
+      {% if not llm_available %}
+      <div class="ask-sparrow-note">Set Azure OpenAI configuration in `.env` to re-enable Ask SPARROW.</div>
+      {% endif %}
+    </section>
+  </div>
   <div class="sidebar-footer">
     <div>{{ total_projects }} Projects &middot; {{ today.strftime('%B %d, %Y') }}</div>
     <div class="user">
@@ -38,6 +67,57 @@
   {% block content %}{% endblock %}
 </div>
 
+<script>
+(() => {
+  const form = document.getElementById('ask-sparrow-form');
+  const questionInput = document.getElementById('ask-sparrow-question');
+  const answerBox = document.getElementById('ask-sparrow-answer');
+
+  if (!form || !questionInput || !answerBox) {
+    return;
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const question = questionInput.value.trim();
+    if (!question) {
+      answerBox.hidden = false;
+      answerBox.textContent = 'Enter a question first.';
+      answerBox.classList.add('error');
+      return;
+    }
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Asking...';
+    }
+
+    answerBox.hidden = false;
+    answerBox.classList.remove('error');
+    answerBox.textContent = 'Thinking...';
+
+    try {
+      const response = await fetch('{{ url_for("ask_sparrow") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question }),
+      });
+      const payload = await response.json();
+      answerBox.textContent = payload.answer || 'No answer returned.';
+      answerBox.classList.toggle('error', !response.ok);
+    } catch (error) {
+      answerBox.textContent = 'Could not reach Ask SPARROW.';
+      answerBox.classList.add('error');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = {{ 'false' if llm_available else 'true' }};
+        submitButton.textContent = 'Ask';
+      }
+    }
+  });
+})();
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

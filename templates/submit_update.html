@@ -100,25 +100,9 @@
   <div class="card-body">
     <form method="POST" action="{{ url_for('submit_update') }}" id="update-form">
 
-      <!-- Selectors Row -->
-      <div class="form-row">
-        <div class="form-group">
-          <label>Input type</label>
-          <select name="input_type" class="form-select">
-            <option value="Email">Email</option>
-            <option value="Teams message">Teams message</option>
-            <option value="Meeting notes">Meeting notes</option>
-            <option value="Manual note">Manual note</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Your name</label>
-          <select name="submitter" class="form-select">
-            {% for member in TEAM_MEMBERS %}
-            <option value="{{ member }}">{{ member }}</option>
-            {% endfor %}
-          </select>
-        </div>
+      <div class="summary-banner" style="margin-bottom:16px;">
+        <span class="icon">&#9998;</span>
+        This form is treated as a manual update.
       </div>
 
       <!-- Textarea -->
