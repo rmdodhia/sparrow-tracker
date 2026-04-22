@@ -2,14 +2,18 @@
 SPARROW Installation Tracker — Microsoft Graph Email Client
 
 Reads email from a shared mailbox (sparrow-tracker@microsoft.com) using
-the Microsoft Graph API with client credentials (daemon/app-only) flow.
+the Microsoft Graph API.
+
+Auth strategy (in priority order):
+  1. Managed identity (production on App Service) — no secrets needed
+  2. MSAL client credentials (if GRAPH_CLIENT_SECRET is set)
+  3. DefaultAzureCredential fallback (az login, VS Code, etc.)
 
 Requires:
   - App registration with Mail.ReadWrite (Application) + admin consent
-  - GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID in env
+  - GRAPH_USER_EMAIL set to the target mailbox
 """
 
-import msal
 import requests
 
 from config import (
@@ -17,37 +21,44 @@ from config import (
 )
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-_SCOPES = ["https://graph.microsoft.com/.default"]
+_GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 
-_cached_app = None
-
-
-def _get_app():
-    """Return a cached MSAL ConfidentialClientApplication."""
-    global _cached_app
-    if _cached_app is None:
-        if not GRAPH_CLIENT_ID or not GRAPH_CLIENT_SECRET:
-            raise RuntimeError(
-                "Microsoft Graph not configured. Set GRAPH_CLIENT_ID, "
-                "GRAPH_CLIENT_SECRET, GRAPH_TENANT_ID in .env"
-            )
-        _cached_app = msal.ConfidentialClientApplication(
-            GRAPH_CLIENT_ID,
-            authority=f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}",
-            client_credential=GRAPH_CLIENT_SECRET,
-        )
-    return _cached_app
+_cached_credential = None
 
 
 def _get_token() -> str:
-    """Acquire an app-only access token for Microsoft Graph."""
-    app = _get_app()
-    result = app.acquire_token_for_client(scopes=_SCOPES)
-    if "access_token" in result:
-        return result["access_token"]
-    raise RuntimeError(
-        f"Failed to acquire Graph token: {result.get('error_description', result)}"
-    )
+    """Acquire an access token for Microsoft Graph.
+
+    Uses MSAL client credentials if a secret is configured,
+    otherwise falls back to DefaultAzureCredential (managed identity,
+    az login, etc.).
+    """
+    global _cached_credential
+
+    # Path 1: MSAL client credentials (if secret is available)
+    if GRAPH_CLIENT_SECRET and GRAPH_CLIENT_ID:
+        import msal
+        if _cached_credential is None:
+            _cached_credential = msal.ConfidentialClientApplication(
+                GRAPH_CLIENT_ID,
+                authority=f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}",
+                client_credential=GRAPH_CLIENT_SECRET,
+            )
+        result = _cached_credential.acquire_token_for_client(
+            scopes=[_GRAPH_SCOPE]
+        )
+        if "access_token" in result:
+            return result["access_token"]
+        raise RuntimeError(
+            f"MSAL token acquisition failed: {result.get('error_description', result)}"
+        )
+
+    # Path 2: DefaultAzureCredential (managed identity on App Service, az login locally)
+    from azure.identity import DefaultAzureCredential
+    if _cached_credential is None:
+        _cached_credential = DefaultAzureCredential()
+    token = _cached_credential.get_token(_GRAPH_SCOPE)
+    return token.token
 
 
 def _headers() -> dict:

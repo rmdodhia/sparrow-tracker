@@ -64,7 +64,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
     httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.11'
-      appCommandLine: 'python -m streamlit run app.py --server.port 8000 --server.headless true --server.address 0.0.0.0'
+      appCommandLine: 'gunicorn --bind=0.0.0.0:8000 app:app'
       alwaysOn: true
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
