@@ -12,12 +12,11 @@ param location string = 'westus2'
 @allowed(['prod', 'dev'])
 param environment string = 'prod'
 
-@description('SQL Server admin login')
-param sqlAdminLogin string = 'sparrowadmin'
+@description('Azure AD admin object ID for SQL Server (use your own or the managed identity)')
+param sqlAadAdminObjectId string
 
-@secure()
-@description('SQL Server admin password')
-param sqlAdminPassword string
+@description('Azure AD admin display name')
+param sqlAadAdminName string = 'sparrow-tracker-admins'
 
 @description('App registration client ID for Microsoft Graph')
 param appRegistrationClientId string = '5f813bb9-d2c4-4246-ba36-3c394a0ade39'
@@ -76,10 +75,10 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_OPENAI_ENDPOINT', value: '' }
         { name: 'AZURE_OPENAI_DEPLOYMENT', value: '' }
         { name: 'AZURE_OPENAI_API_KEY', value: '' }
-        // Azure SQL
+        // Azure SQL — managed identity auth (Entra-only, no SQL password)
         {
           name: 'AZURE_SQL_CONNECTION_STRING'
-          value: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Uid=${sqlAdminLogin};Pwd=${sqlAdminPassword};Encrypt=yes;TrustServerCertificate=no;'
+          value: 'Driver={ODBC Driver 18 for SQL Server};Server=tcp:${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabase.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;'
         }
         // Microsoft Graph (for email ingestion)
         { name: 'GRAPH_CLIENT_ID', value: appRegistrationClientId }
@@ -101,10 +100,16 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   location: location
   tags: tags
   properties: {
-    administratorLogin: sqlAdminLogin
-    administratorLoginPassword: sqlAdminPassword
     minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled' // needed for App Service without VNet integration
+    publicNetworkAccess: 'Enabled'
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      principalType: 'Group'
+      login: sqlAadAdminName
+      sid: sqlAadAdminObjectId
+      tenantId: '72f988bf-86f1-41af-91ab-2d7cd011db47'
+      azureADOnlyAuthentication: true
+    }
   }
 }
 
