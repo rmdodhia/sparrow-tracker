@@ -54,10 +54,10 @@
   <div class="sidebar-footer">
     <div>{{ total_projects }} Projects &middot; {{ today.strftime('%B %d, %Y') }}</div>
     <div class="user">
-      <div class="avatar">RD</div>
+      <div class="avatar">{{ current_user.initials }}</div>
       <div>
-        <div class="user-name">Rahul Dodhia</div>
-        <div class="user-email">radodhia@microsoft.com</div>
+        <div class="user-name">{{ current_user.name }}</div>
+        <div class="user-email">{{ current_user.email }}</div>
       </div>
     </div>
   </div>

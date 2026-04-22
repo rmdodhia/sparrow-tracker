@@ -5,6 +5,9 @@ Run:  flask run --debug
 """
 
 import json
+import getpass
+import os
+import pwd
 from datetime import date, datetime
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
@@ -30,12 +33,36 @@ init_db()
 llm_available = bool(AZURE_OPENAI_ENDPOINT)
 
 
+def _current_session_user():
+    """Best-effort identity for the currently logged-in local user."""
+    username = getpass.getuser()
+    display_name = username
+    try:
+        gecos = pwd.getpwnam(username).pw_gecos.split(",", 1)[0].strip()
+        if gecos:
+            display_name = gecos
+    except KeyError:
+        pass
+
+    email = os.environ.get("EMAIL", "").strip() or "Local session"
+    name_source = display_name if display_name else username
+    parts = [part[0].upper() for part in name_source.replace("_", " ").replace(".", " ").split() if part]
+    initials = "".join(parts[:2]) or username[:2].upper()
+
+    return {
+        "name": display_name,
+        "email": email,
+        "initials": initials,
+    }
+
+
 # ── Template helpers ─────────────────────────────────────────────────────────
 
 @app.context_processor
 def inject_globals():
     """Make common values available to all templates."""
     projects = get_all_projects()
+    current_user = _current_session_user()
     current_project_id = None
     if request.endpoint == "project_details":
         current_project_id = (request.view_args or {}).get("project_id")
@@ -51,6 +78,7 @@ def inject_globals():
         today=date.today(),
         total_projects=len(projects),
         llm_available=llm_available,
+        current_user=current_user,
         project_details_url=project_details_url,
         VALID_STATUSES=VALID_STATUSES,
         VALID_HEALTH=VALID_HEALTH,
