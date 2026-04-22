@@ -1,161 +1,74 @@
 # SPARROW Installation Tracker
 
-Flask-based tracking app for SPARROW deployments and development tracks. This version uses server-rendered Jinja templates in `templates/` and shared styling/assets in `static/`, replacing the earlier Streamlit UI.
+Flask-based tracking app for SPARROW deployments and development tracks. Uses server-rendered Jinja templates in `templates/` and shared styling in `static/`.
 
-The app tracks deployment status, health, deadlines, history, contacts, timeline phases, nudges, and Azure DevOps work items. It also supports optional Azure OpenAI-powered parsing for free-form updates and Q&A.
-
-## Current Architecture
+## Architecture
 
 - `app.py` — Flask entry point and route definitions
 - `templates/` — server-rendered HTML views
 - `static/css/style.css` — shared UI styles
-- `db.py` — SQLite schema and data access layer used by the running app
-- `db_azure.py` — Azure SQL implementation kept alongside the SQLite layer
+- `db.py` — Database layer (SQLite for local dev, Azure SQL for production — auto-selects via env var)
+- `graph_email.py` — Microsoft Graph email client (production)
+- `email_ingest.py` — Email ingestion router (Graph or IMAP)
 - `llm.py` — Azure OpenAI parsing and question-answering helpers
 - `devops_sync.py` — Azure DevOps work item sync
 - `monitor.py` — stale-project and deadline alert logic
 - `notifications.py` — optional SMTP notification support
-- `migrate_to_azure.py` — one-time SQLite to Azure SQL migration script
+- `infra/` — Bicep IaC templates and deployment script
 
-## Features
-
-- Dashboard with portfolio counts, attention items, and recent activity
-- Project detail pages with history, contacts, nudges, and target-date context
-- Submit Update workflow for free-form text ingestion with optional LLM parsing
-- Ask SPARROW endpoint for natural-language questions against current tracker data
-- Timeline view for deployment and dev-track phases
-- Reports and settings pages for monitoring and operational context
-- Azure DevOps sync support for sprint and work item visibility
-
-## Requirements
-
-- Python 3.10+
-- SQLite for the default local runtime
-- Optional Azure OpenAI credentials for AI-assisted parsing and Q&A
-- Optional Azure DevOps auth for sync features
-- Optional Azure SQL credentials if you plan to migrate off SQLite
-
-## Installation
+## Running Locally
 
 ```bash
-git clone https://github.com/rmdodhia/sparrow-tracker.git
+git clone <repo-url>
 cd sparrow-tracker
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Create a `.env` file in the repo root if you want any external integrations enabled.
-
-## Environment Variables
-
-### Optional Azure OpenAI
-
-```env
-AZURE_OPENAI_ENDPOINT=
-AZURE_OPENAI_DEPLOYMENT=
-AZURE_OPENAI_API_KEY=
-AZURE_OPENAI_API_VERSION=2024-10-21
-```
-
-Without these values, the app still runs, but AI parsing and Ask SPARROW responses are disabled.
-
-### Optional Azure DevOps
-
-```env
-AZURE_DEVOPS_ORG=onecela
-AZURE_DEVOPS_PROJECT=AI For Good Lab
-AZURE_DEVOPS_PAT=
-DEVOPS_SPRINT_QUERY_ID=
-```
-
-If `AZURE_DEVOPS_PAT` is not set, the sync code attempts Azure AD authentication via `az login`.
-
-### Optional Azure SQL
-
-```env
-AZURE_SQL_SERVER=
-AZURE_SQL_DATABASE=
-AZURE_SQL_USER=
-AZURE_SQL_PASSWORD=
-```
-
-Note: the checked-in Flask app currently uses [db.py](/home/radodhia/sparrow-tracker-v2/db.py), which is SQLite-backed by default. The Azure SQL files are present for migration and parallel development work.
-
-### Optional Email and SMTP
-
-```env
-IMAP_HOST=
-IMAP_PORT=993
-IMAP_USER=
-IMAP_PASS=
-IMAP_FOLDER=INBOX
-IMAP_DONE_FOLDER=
-
-SPARROW_SMTP_HOST=
-SPARROW_SMTP_PORT=587
-SPARROW_SMTP_USER=
-SPARROW_SMTP_PASS=
-SPARROW_NOTIFY_FROM=sparrow-tracker@noreply.local
-```
-
-## Running The App
-
-Either of these works:
-
-```bash
+cp .env.example .env  # edit with your credentials
 python app.py
 ```
 
-or:
+Open `http://127.0.0.1:5001`. The app uses SQLite locally by default — no database setup needed.
+
+## Environment Variables
+
+Create a `.env` file (gitignored). All integrations are optional:
+
+| Var | Purpose |
+|---|---|
+| `AZURE_OPENAI_ENDPOINT` | Enables LLM update parsing + Ask SPARROW |
+| `AZURE_OPENAI_DEPLOYMENT` | Model deployment name |
+| `AZURE_OPENAI_API_KEY` | API key for OpenAI |
+| `AZURE_SQL_CONNECTION_STRING` | If set, uses Azure SQL instead of SQLite |
+| `GRAPH_CLIENT_ID` | App registration for Graph email |
+| `GRAPH_TENANT_ID` | Entra tenant ID |
+| `GRAPH_USER_EMAIL` | Mailbox to read |
+| `AZURE_DEVOPS_PAT` | Optional — if unset, uses `az login` |
+
+Without any env vars, the app runs with SQLite and no AI features.
+
+## Deploying to Azure
+
+The production deployment uses Azure App Service with Azure SQL, Entra-only authentication, and managed identity. Infrastructure is defined in `infra/main.bicep`.
+
+See the internal engineering wiki for deployment procedures, subscription details, and app registration configuration.
+
+### Quick Deploy
 
 ```bash
-flask --app app run --debug --port 5001
-```
+# Provision infrastructure
+./infra/deploy.sh
 
-Then open `http://127.0.0.1:5001`.
+# Deploy code
+az webapp up --resource-group <rg-name> --name <app-name> --runtime "PYTHON:3.11"
 
-On startup, the app automatically initializes the SQLite schema in `sparrow_tracker.db` if it does not already exist.
-
-## Data Initialization
-
-This repository no longer includes the legacy Excel backlog workbook that `seed_data.py` expects. That means:
-
-- The app can still start with an empty or existing SQLite database.
-- `python seed_data.py` will only work if you supply the source workbook at the path the script expects.
-- If you already have a populated `sparrow_tracker.db`, the app will use it directly.
-
-## Azure SQL Migration
-
-If you want to copy your existing SQLite data into Azure SQL:
-
-```bash
-python migrate_to_azure.py
-```
-
-Before running that script, set the Azure SQL credentials in `.env`.
-
-## Repo Layout
-
-```text
-app.py
-config.py
-db.py
-db_azure.py
-devops_sync.py
-email_ingest.py
-llm.py
-migrate_to_azure.py
-monitor.py
-notifications.py
-seed_data.py
-seed_dev_tracks.py
-static/
-templates/
+# Seed data (via SSH into the web app)
+az webapp ssh --resource-group <rg-name> --name <app-name>
+python seed_data.py
 ```
 
 ## Notes
 
-- The app secret key is currently hard-coded in `app.py` for local development.
-- LLM-powered flows are runtime-optional and degrade to non-AI behavior when Azure OpenAI is not configured.
-- DevOps, IMAP, SMTP, and Azure SQL integrations are optional and only needed if you use those features.
+- `*.db` files are gitignored — never commit database files
+- LLM features degrade gracefully when Azure OpenAI is not configured
+- Production access is restricted to the Microsoft tenant via EasyAuth
+- The app secret key in `app.py` should be set via env var in production
