@@ -1,5 +1,12 @@
 """
-SPARROW Installation Tracker — Database Layer (SQLite)
+SPARROW Installation Tracker — Database Layer
+
+Supports two backends:
+  - SQLite  (local dev, default when AZURE_SQL_CONNECTION_STRING is unset)
+  - Azure SQL via pyodbc (production)
+
+The rest of the module uses standard DB-API parameterized queries (`?`),
+which both sqlite3 and pyodbc accept.
 """
 
 import json
@@ -7,25 +14,95 @@ import sqlite3
 from datetime import datetime, date, timedelta
 from contextlib import contextmanager
 
-from config import DB_PATH, STALENESS_THRESHOLDS, DEADLINE_ALERTS, CLOSED_STATUSES
+from config import (
+    DB_PATH, AZURE_SQL_CONNECTION_STRING, DB_BACKEND,
+    STALENESS_THRESHOLDS, DEADLINE_ALERTS, CLOSED_STATUSES,
+)
+
+
+class _DictRow:
+    """Minimal wrapper so pyodbc rows behave like sqlite3.Row (dict-like)."""
+
+    def __init__(self, cursor, row):
+        self._data = {
+            col[0]: row[i] for i, col in enumerate(cursor.description)
+        }
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return list(self._data.values())[key]
+        return self._data[key]
+
+    def keys(self):
+        return self._data.keys()
+
+
+def _dict_from_row(row):
+    """Convert a row (sqlite3.Row or _DictRow) to a plain dict."""
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row
+    return dict(zip(row.keys(), (row[k] for k in row.keys())))
 
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+    """Yield a DB-API connection for the configured backend."""
+    if DB_BACKEND == "azure_sql":
+        import pyodbc
+        conn = pyodbc.connect(AZURE_SQL_CONNECTION_STRING)
+        conn.autocommit = False
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _fetchall_dicts(cursor):
+    """Fetch all rows as list[dict], works with both backends."""
+    if DB_BACKEND == "azure_sql":
+        cols = [col[0] for col in cursor.description] if cursor.description else []
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+    return [dict(r) for r in cursor.fetchall()]
+
+
+def _fetchone_dict(cursor):
+    """Fetch one row as dict or None, works with both backends."""
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    if DB_BACKEND == "azure_sql":
+        cols = [col[0] for col in cursor.description]
+        return dict(zip(cols, row))
+    return dict(row)
 
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 def init_db():
+    if DB_BACKEND == "azure_sql":
+        _init_db_azure_sql()
+    else:
+        _init_db_sqlite()
+
+
+def _init_db_sqlite():
+    """SQLite schema — used for local development."""
     with get_conn() as conn:
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS projects (
@@ -156,6 +233,125 @@ def init_db():
         _backfill_phases(conn)
 
 
+def _init_db_azure_sql():
+    """Azure SQL schema — used in production. Idempotent via IF NOT EXISTS."""
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'projects')
+        CREATE TABLE projects (
+            project_id        NVARCHAR(200) PRIMARY KEY,
+            continent         NVARCHAR(100),
+            country           NVARCHAR(200),
+            location          NVARCHAR(500),
+            partner_org       NVARCHAR(500),
+            status            NVARCHAR(100) NOT NULL DEFAULT 'Scoping',
+            blocker           NVARCHAR(MAX),
+            deployment_type   NVARCHAR(200),
+            timeline_label    NVARCHAR(200),
+            target_date       NVARCHAR(20),
+            target_confidence NVARCHAR(50),
+            hardware          NVARCHAR(500),
+            estimated_cost    FLOAT,
+            team_owner        NVARCHAR(200),
+            devops_id         INT,
+            notes             NVARCHAR(MAX),
+            last_updated      NVARCHAR(30) NOT NULL,
+            last_updated_by   NVARCHAR(200),
+            is_at_risk        INT NOT NULL DEFAULT 0,
+            item_type         NVARCHAR(50) NOT NULL DEFAULT 'deployment',
+            track_name        NVARCHAR(500),
+            start_date        NVARCHAR(20),
+            parent_project_id NVARCHAR(200)
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'history')
+        CREATE TABLE history (
+            id              INT IDENTITY(1,1) PRIMARY KEY,
+            project_id      NVARCHAR(200) NOT NULL,
+            timestamp       NVARCHAR(30) NOT NULL,
+            updated_by      NVARCHAR(200),
+            source_type     NVARCHAR(50),
+            source_text     NVARCHAR(MAX),
+            changes         NVARCHAR(MAX) NOT NULL,
+            llm_summary     NVARCHAR(MAX)
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'contacts')
+        CREATE TABLE contacts (
+            id              INT IDENTITY(1,1) PRIMARY KEY,
+            name            NVARCHAR(500) NOT NULL,
+            organization    NVARCHAR(500),
+            role            NVARCHAR(200),
+            email           NVARCHAR(500),
+            phone           NVARCHAR(100),
+            linked_projects NVARCHAR(MAX),
+            notes           NVARCHAR(MAX)
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'raw_inputs')
+        CREATE TABLE raw_inputs (
+            id              INT IDENTITY(1,1) PRIMARY KEY,
+            timestamp       NVARCHAR(30) NOT NULL,
+            submitted_by    NVARCHAR(200),
+            input_type      NVARCHAR(50),
+            full_text       NVARCHAR(MAX) NOT NULL,
+            history_ids     NVARCHAR(MAX)
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'nudges')
+        CREATE TABLE nudges (
+            id              INT IDENTITY(1,1) PRIMARY KEY,
+            project_id      NVARCHAR(200) NOT NULL,
+            timestamp       NVARCHAR(30) NOT NULL,
+            nudge_type      NVARCHAR(50) NOT NULL,
+            severity        NVARCHAR(50) NOT NULL,
+            message         NVARCHAR(MAX) NOT NULL,
+            sent_to         NVARCHAR(200),
+            resolved        INT NOT NULL DEFAULT 0,
+            resolved_by_history_id INT
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'devops_work_items')
+        CREATE TABLE devops_work_items (
+            id              INT PRIMARY KEY,
+            title           NVARCHAR(MAX) NOT NULL,
+            state           NVARCHAR(100),
+            assigned_to     NVARCHAR(500),
+            iteration_path  NVARCHAR(500),
+            work_item_type  NVARCHAR(100),
+            area_path       NVARCHAR(500),
+            tags            NVARCHAR(MAX),
+            linked_project_id NVARCHAR(200),
+            url             NVARCHAR(1000),
+            last_synced     NVARCHAR(30)
+        )
+        """)
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'phases')
+        CREATE TABLE phases (
+            id                  INT IDENTITY(1,1) PRIMARY KEY,
+            project_id          NVARCHAR(200) NOT NULL,
+            phase_key           NVARCHAR(100) NOT NULL,
+            name                NVARCHAR(500) NOT NULL,
+            ordering            INT NOT NULL DEFAULT 0,
+            start_date          NVARCHAR(20),
+            end_date            NVARCHAR(20),
+            status              NVARCHAR(100) NOT NULL DEFAULT 'Planned',
+            depends_on_phase_id INT,
+            devops_id           INT,
+            notes               NVARCHAR(MAX),
+            last_updated        NVARCHAR(30) NOT NULL
+        )
+        """)
+        conn.commit()
+
+
 def _migrate_phase_columns(conn):
     """Add item_type, track_name, start_date, parent_project_id to projects. Idempotent."""
     new_cols = [
@@ -247,20 +443,28 @@ def _migrate_statuses(conn):
 def get_all_projects(include_closed=True):
     with get_conn() as conn:
         if include_closed:
-            rows = conn.execute("SELECT * FROM projects ORDER BY continent, country, location").fetchall()
+            cur = conn.execute("SELECT * FROM projects ORDER BY continent, country, location")
         else:
             placeholders = ",".join("?" for _ in CLOSED_STATUSES)
-            rows = conn.execute(
+            cur = conn.execute(
                 f"SELECT * FROM projects WHERE status NOT IN ({placeholders}) ORDER BY continent, country, location",
                 list(CLOSED_STATUSES),
-            ).fetchall()
-        return [dict(r) for r in rows]
+            )
+        return _fetchall_dicts(cur)
 
 
 def get_project(project_id):
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
-        return dict(row) if row else None
+        cur = conn.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,))
+        return _fetchone_dict(cur)
+
+
+_UPDATABLE_PROJECT_FIELDS = {
+    "continent", "country", "location", "partner_org", "status", "blocker",
+    "deployment_type", "timeline_label", "target_date", "target_confidence",
+    "hardware", "estimated_cost", "team_owner", "devops_id", "notes",
+    "is_at_risk", "item_type", "track_name", "start_date", "parent_project_id",
+}
 
 
 def update_project(project_id, updates: dict, updated_by: str = None):
@@ -271,7 +475,7 @@ def update_project(project_id, updates: dict, updated_by: str = None):
 
     changes = {}
     for field, new_val in updates.items():
-        if field in ("project_id",):
+        if field not in _UPDATABLE_PROJECT_FIELDS:
             continue
         old_val = current.get(field)
         if str(old_val) != str(new_val):
@@ -301,7 +505,8 @@ def update_project(project_id, updates: dict, updated_by: str = None):
 
 
 def create_project(data: dict):
-    cols = list(data.keys())
+    allowed = _UPDATABLE_PROJECT_FIELDS | {"project_id", "last_updated", "last_updated_by"}
+    cols = [k for k in data.keys() if k in allowed]
     placeholders = ",".join("?" for _ in cols)
     with get_conn() as conn:
         conn.execute(
@@ -334,13 +539,14 @@ def add_history(project_id, changes: dict, source_text: str = None,
 
 def get_project_history(project_id, limit=50):
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM history WHERE project_id = ? ORDER BY timestamp DESC LIMIT ?",
-            (project_id, limit),
-        ).fetchall()
+        cur = conn.execute(
+            "SELECT * FROM history WHERE project_id = ? ORDER BY timestamp DESC",
+            (project_id,),
+        )
+        rows = _fetchall_dicts(cur)
+        # Limit in Python for cross-backend compat (pyodbc doesn't always support LIMIT)
         result = []
-        for r in rows:
-            d = dict(r)
+        for d in rows[:limit]:
             d["changes"] = json.loads(d["changes"])
             result.append(d)
         return result
@@ -349,13 +555,13 @@ def get_project_history(project_id, limit=50):
 def get_recent_history(days=14, limit=100):
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds")
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM history WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?",
-            (cutoff, limit),
-        ).fetchall()
+        cur = conn.execute(
+            "SELECT * FROM history WHERE timestamp >= ? ORDER BY timestamp DESC",
+            (cutoff,),
+        )
+        rows = _fetchall_dicts(cur)
         result = []
-        for r in rows:
-            d = dict(r)
+        for d in rows[:limit]:
             d["changes"] = json.loads(d["changes"])
             result.append(d)
         return result
@@ -377,10 +583,10 @@ def add_contact(name, organization=None, role=None, email=None, phone=None,
 def get_contacts(project_id=None):
     with get_conn() as conn:
         if project_id:
-            rows = conn.execute("SELECT * FROM contacts").fetchall()
-            return [dict(r) for r in rows
+            rows = _fetchall_dicts(conn.execute("SELECT * FROM contacts"))
+            return [r for r in rows
                     if project_id in json.loads(r["linked_projects"] or "[]")]
-        return [dict(r) for r in conn.execute("SELECT * FROM contacts ORDER BY organization, name").fetchall()]
+        return _fetchall_dicts(conn.execute("SELECT * FROM contacts ORDER BY organization, name"))
 
 
 # ── Raw Inputs ────────────────────────────────────────────────────────────────
@@ -408,15 +614,15 @@ def add_nudge(project_id, nudge_type, severity, message, sent_to=None):
 def get_active_nudges(project_id=None):
     with get_conn() as conn:
         if project_id:
-            rows = conn.execute(
+            cur = conn.execute(
                 "SELECT * FROM nudges WHERE resolved = 0 AND project_id = ? ORDER BY timestamp DESC",
                 (project_id,),
-            ).fetchall()
+            )
         else:
-            rows = conn.execute(
+            cur = conn.execute(
                 "SELECT * FROM nudges WHERE resolved = 0 ORDER BY severity DESC, timestamp DESC"
-            ).fetchall()
-        return [dict(r) for r in rows]
+            )
+        return _fetchall_dicts(cur)
 
 
 def resolve_nudge(nudge_id, history_id=None):
@@ -472,11 +678,11 @@ def get_deadline_approaching():
 def get_phases(project_id):
     """All phases for a project, in ordering order."""
     with get_conn() as conn:
-        rows = conn.execute(
+        cur = conn.execute(
             "SELECT * FROM phases WHERE project_id = ? ORDER BY ordering, id",
             (project_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
+        )
+        return _fetchall_dicts(cur)
 
 
 def upsert_phases(project_id: str, rows: list):
@@ -495,9 +701,9 @@ def upsert_phases(project_id: str, rows: list):
     deltas = {"created": [], "updated": [], "deleted": []}
 
     with get_conn() as conn:
-        existing = {r["id"]: dict(r) for r in conn.execute(
-            "SELECT * FROM phases WHERE project_id = ?", (project_id,)
-        ).fetchall()}
+        existing = {r["id"]: r for r in _fetchall_dicts(
+            conn.execute("SELECT * FROM phases WHERE project_id = ?", (project_id,))
+        )}
         seen_ids = set()
 
         for i, row in enumerate(rows):
@@ -596,13 +802,13 @@ def apply_phase_change(project_id: str, change: dict):
         # update
         if not phase_id:
             return {"action": "noop", "reason": "no phase_id given for update"}
-        row = conn.execute(
+        row = _fetchone_dict(conn.execute(
             "SELECT * FROM phases WHERE id = ? AND project_id = ?",
             (phase_id, project_id),
-        ).fetchone()
+        ))
         if not row:
             return {"action": "noop", "reason": f"phase {phase_id} not found"}
-        old = dict(row)
+        old = row
         sets, params, changed = [], [], {}
         for k in ("name", "start_date", "end_date", "status", "notes", "phase_key", "ordering"):
             if k in updates and updates[k] is not None:
@@ -651,14 +857,15 @@ def get_timeline_rows(include_closed=True):
         if not include_closed:
             placeholders = ",".join("?" for _ in CLOSED_STATUSES)
             sql += f" WHERE p.status NOT IN ({placeholders})"
-            rows = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering", list(CLOSED_STATUSES)).fetchall()
+            cur = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering", list(CLOSED_STATUSES))
         else:
-            rows = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering").fetchall()
-        return [dict(r) for r in rows]
+            cur = conn.execute(sql + " ORDER BY p.item_type DESC, p.track_name, p.continent, p.country, ph.ordering")
+        return _fetchall_dicts(cur)
 
 
 def get_status_summary():
     """Return {status: count} dict."""
     with get_conn() as conn:
-        rows = conn.execute("SELECT status, COUNT(*) as cnt FROM projects GROUP BY status").fetchall()
+        cur = conn.execute("SELECT status, COUNT(*) as cnt FROM projects GROUP BY status")
+        rows = _fetchall_dicts(cur)
         return {r["status"]: r["cnt"] for r in rows}

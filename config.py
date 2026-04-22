@@ -16,7 +16,12 @@ AZURE_OPENAI_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
 AZURE_OPENAI_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
 
 # --- Database ---
+# SQLite (local dev) — used when AZURE_SQL_CONNECTION_STRING is not set.
 DB_PATH = os.path.join(os.path.dirname(__file__), "sparrow_tracker.db")
+
+# Azure SQL (production) — set this to use Azure SQL instead of SQLite.
+AZURE_SQL_CONNECTION_STRING = os.environ.get("AZURE_SQL_CONNECTION_STRING", "")
+DB_BACKEND = "azure_sql" if AZURE_SQL_CONNECTION_STRING else "sqlite"
 
 # --- Status Enum ---
 # Simplified statuses. "At Risk" is a flag (is_at_risk) that can be tacked onto any status.
@@ -90,13 +95,20 @@ DEVOPS_SPRINT_QUERY_ID = os.environ.get(
     "DEVOPS_SPRINT_QUERY_ID", "6f2ec623-1268-4b9e-9c13-996785b3961a"
 )
 
-# --- Email Ingestion (IMAP) ---
+# --- Email Ingestion (IMAP — legacy, used when GRAPH_CLIENT_ID is not set) ---
 IMAP_HOST = os.environ.get("IMAP_HOST", "")
 IMAP_PORT = int(os.environ.get("IMAP_PORT", "993"))
 IMAP_USER = os.environ.get("IMAP_USER", "")
 IMAP_PASS = os.environ.get("IMAP_PASS", "")
 IMAP_FOLDER = os.environ.get("IMAP_FOLDER", "INBOX")
 IMAP_DONE_FOLDER = os.environ.get("IMAP_DONE_FOLDER", "")
+
+# --- Email Ingestion (Microsoft Graph — production) ---
+GRAPH_CLIENT_ID = os.environ.get("GRAPH_CLIENT_ID", "")
+GRAPH_CLIENT_SECRET = os.environ.get("GRAPH_CLIENT_SECRET", "")
+GRAPH_TENANT_ID = os.environ.get("GRAPH_TENANT_ID", "")
+GRAPH_USER_EMAIL = os.environ.get("GRAPH_USER_EMAIL", "sparrow-tracker@microsoft.com")
+EMAIL_BACKEND = "graph" if GRAPH_CLIENT_ID else ("imap" if IMAP_HOST else "")
 
 # --- Notification / SMTP (optional) ---
 SMTP_HOST = os.environ.get("SPARROW_SMTP_HOST", "")
