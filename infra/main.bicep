@@ -6,7 +6,7 @@
 targetScope = 'resourceGroup'
 
 @description('Azure region for all resources')
-param location string = 'eastus2'
+param location string = 'westus2'
 
 @description('Environment name')
 @allowed(['prod', 'dev'])
@@ -43,8 +43,8 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   tags: tags
   kind: 'linux'
   sku: {
-    name: 'S1'
-    tier: 'Standard'
+    name: 'B1'
+    tier: 'Basic'
   }
   properties: {
     reserved: true // required for Linux

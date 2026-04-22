@@ -1,6 +1,6 @@
 using './main.bicep'
 
-param location = 'eastus2'
+param location = 'westus2'
 param environment = 'prod'
 param sqlAdminLogin = 'sparrowadmin'
 
