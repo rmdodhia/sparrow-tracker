@@ -46,8 +46,9 @@ def check_staleness(use_llm=True, dry_run=False):
 
         days = p["days_since_update"]
         threshold = p["threshold"]
+        health = p.get("health") or "On Track"
         reason = (
-            f"No update in {days} days (threshold for '{p['status']}' status is {threshold} days)."
+            f"No update in {days} days (threshold for '{health}' health is {threshold} days)."
         )
 
         if use_llm:

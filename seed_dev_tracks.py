@@ -30,9 +30,9 @@ DEV_TRACKS = [
         "start_date": "2025-11-01",
         "target_date": "2026-06-30",
         "phases": [
-            {"key": "Dev",        "name": "Water SPARROW Development",  "start": "2025-11-01", "end": "2026-04-30", "status": "In Progress"},
-            {"key": "Testing",    "name": "Testing",                    "start": "2026-04-01", "end": "2026-05-31", "status": "Planned"},
-            {"key": "Rollout",    "name": "Puget Sound Deployment",     "start": "2026-05-01", "end": "2026-06-30", "status": "Planned"},
+            {"key": "Dev",        "name": "Water SPARROW Development",  "start": "2025-11-01", "end": "2026-04-30", "status": "Doing"},
+            {"key": "Testing",    "name": "Testing",                    "start": "2026-04-01", "end": "2026-05-31", "status": "Todo"},
+            {"key": "Rollout",    "name": "Puget Sound Deployment",     "start": "2026-05-01", "end": "2026-06-30", "status": "Todo"},
         ],
     },
     {
@@ -42,11 +42,11 @@ DEV_TRACKS = [
         "start_date": "2025-08-01",
         "target_date": "2026-12-31",
         "phases": [
-            {"key": "Dev",        "name": "Robin Dev + Testing",        "start": "2025-08-01", "end": "2026-02-28", "status": "In Progress"},
-            {"key": "Manual",     "name": "Robin Installation Manual",  "start": "2026-03-01", "end": "2026-04-30", "status": "Planned"},
-            {"key": "OpenSource", "name": "Robin Open Sourcing",        "start": "2026-08-01", "end": "2026-10-31", "status": "Planned"},
-            {"key": "Testing",    "name": "Testing",                    "start": "2026-11-01", "end": "2026-11-30", "status": "Planned"},
-            {"key": "Launch",     "name": "Robin Launch",               "start": "2026-12-01", "end": "2026-12-31", "status": "Planned"},
+            {"key": "Dev",        "name": "Robin Dev + Testing",        "start": "2025-08-01", "end": "2026-02-28", "status": "Doing"},
+            {"key": "Manual",     "name": "Robin Installation Manual",  "start": "2026-03-01", "end": "2026-04-30", "status": "Todo"},
+            {"key": "OpenSource", "name": "Robin Open Sourcing",        "start": "2026-08-01", "end": "2026-10-31", "status": "Todo"},
+            {"key": "Testing",    "name": "Testing",                    "start": "2026-11-01", "end": "2026-11-30", "status": "Todo"},
+            {"key": "Launch",     "name": "Robin Launch",               "start": "2026-12-01", "end": "2026-12-31", "status": "Todo"},
         ],
     },
     {
@@ -58,9 +58,9 @@ DEV_TRACKS = [
         "devops_id": 502065,
         "phases": [
             {"key": "Dev",        "name": "PyTorch Desktop Client",     "start": "2025-09-01", "end": "2025-09-30", "status": "Done"},
-            {"key": "Dev",        "name": "SPARROW STUDIO Development", "start": "2025-11-01", "end": "2026-03-31", "status": "In Progress"},
-            {"key": "Launch",     "name": "SPARROW STUDIO Launch",      "start": "2026-06-01", "end": "2026-06-30", "status": "Planned"},
-            {"key": "Rollout",    "name": "MAC & Linux Version",        "start": "2026-07-01", "end": "2026-07-31", "status": "Planned"},
+            {"key": "Dev",        "name": "SPARROW STUDIO Development", "start": "2025-11-01", "end": "2026-03-31", "status": "Doing"},
+            {"key": "Launch",     "name": "SPARROW STUDIO Launch",      "start": "2026-06-01", "end": "2026-06-30", "status": "Todo"},
+            {"key": "Rollout",    "name": "MAC & Linux Version",        "start": "2026-07-01", "end": "2026-07-31", "status": "Todo"},
         ],
     },
     {
@@ -71,9 +71,9 @@ DEV_TRACKS = [
         "target_date": "2026-07-31",
         "parent_project_id": None,
         "phases": [
-            {"key": "Dev",        "name": "Pi SPARROW Development",     "start": "2025-11-01", "end": "2026-04-30", "status": "In Progress"},
-            {"key": "Manual",     "name": "Pi SPARROW Manual",          "start": "2026-05-01", "end": "2026-05-31", "status": "Planned"},
-            {"key": "Launch",     "name": "Pi SPARROW Launch",          "start": "2026-07-01", "end": "2026-07-31", "status": "Planned"},
+            {"key": "Dev",        "name": "Pi SPARROW Development",     "start": "2025-11-01", "end": "2026-04-30", "status": "Doing"},
+            {"key": "Manual",     "name": "Pi SPARROW Manual",          "start": "2026-05-01", "end": "2026-05-31", "status": "Todo"},
+            {"key": "Launch",     "name": "Pi SPARROW Launch",          "start": "2026-07-01", "end": "2026-07-31", "status": "Todo"},
         ],
     },
     {
@@ -83,8 +83,8 @@ DEV_TRACKS = [
         "start_date": "2026-06-01",
         "target_date": "2026-12-31",
         "phases": [
-            {"key": "Dev",        "name": "Weather SPARROW Development","start": "2026-06-01", "end": "2026-10-31", "status": "Planned"},
-            {"key": "Testing",    "name": "Sensor integration & testing","start": "2026-11-01", "end": "2026-12-31", "status": "Planned"},
+            {"key": "Dev",        "name": "Weather SPARROW Development","start": "2026-06-01", "end": "2026-10-31", "status": "Todo"},
+            {"key": "Testing",    "name": "Sensor integration & testing","start": "2026-11-01", "end": "2026-12-31", "status": "Todo"},
         ],
     },
     {
@@ -96,9 +96,9 @@ DEV_TRACKS = [
         "phases": [
             {"key": "Dev",        "name": "Data Annotation",            "start": "2025-08-01", "end": "2025-09-30", "status": "Done"},
             {"key": "Dev",        "name": "Fire Triangulation v1",      "start": "2025-08-01", "end": "2025-10-31", "status": "Done"},
-            {"key": "Dev",        "name": "Online Inference",           "start": "2025-10-01", "end": "2025-11-30", "status": "In Progress"},
-            {"key": "Dev",        "name": "Fire Localization",          "start": "2026-04-01", "end": "2026-04-30", "status": "Planned"},
-            {"key": "Dev",        "name": "Archive Data Pipeline",      "start": "2026-04-01", "end": "2026-04-30", "status": "Planned"},
+            {"key": "Dev",        "name": "Online Inference",           "start": "2025-10-01", "end": "2025-11-30", "status": "Doing"},
+            {"key": "Dev",        "name": "Fire Localization",          "start": "2026-04-01", "end": "2026-04-30", "status": "Todo"},
+            {"key": "Dev",        "name": "Archive Data Pipeline",      "start": "2026-04-01", "end": "2026-04-30", "status": "Todo"},
         ],
     },
 ]
@@ -184,7 +184,7 @@ def seed_dev_tracks():
                     """INSERT INTO projects
                        (project_id, item_type, track_name, status, start_date, target_date,
                         devops_id, notes, last_updated, last_updated_by, continent, country, location)
-                       VALUES (?, 'dev_track', ?, 'Active - Waiting on Us', ?, ?, ?, ?, ?, 'seed', '', '', '')""",
+                       VALUES (?, 'dev_track', ?, 'Active', ?, ?, ?, ?, ?, 'seed', '', '', '')""",
                     (
                         track["project_id"],
                         track["track_name"],

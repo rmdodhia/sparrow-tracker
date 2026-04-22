@@ -1,293 +1,161 @@
 # SPARROW Installation Tracker
 
-A lightweight tracker for the AI For Good Lab's SPARROW wildlife conservation
-deployments. It keeps a running picture of ~40 global installations — status,
-blockers, deadlines, sprint work — in one place, and uses an LLM to turn free-form
-updates (emails, notes) into structured records.
+Flask-based tracking app for SPARROW deployments and development tracks. This version uses server-rendered Jinja templates in `templates/` and shared styling/assets in `static/`, replacing the earlier Streamlit UI.
 
-**Quick start** (no credentials needed to browse):
+The app tracks deployment status, health, deadlines, history, contacts, timeline phases, nudges, and Azure DevOps work items. It also supports optional Azure OpenAI-powered parsing for free-form updates and Q&A.
+
+## Current Architecture
+
+- `app.py` — Flask entry point and route definitions
+- `templates/` — server-rendered HTML views
+- `static/css/style.css` — shared UI styles
+- `db.py` — SQLite schema and data access layer used by the running app
+- `db_azure.py` — Azure SQL implementation kept alongside the SQLite layer
+- `llm.py` — Azure OpenAI parsing and question-answering helpers
+- `devops_sync.py` — Azure DevOps work item sync
+- `monitor.py` — stale-project and deadline alert logic
+- `notifications.py` — optional SMTP notification support
+- `migrate_to_azure.py` — one-time SQLite to Azure SQL migration script
+
+## Features
+
+- Dashboard with portfolio counts, attention items, and recent activity
+- Project detail pages with history, contacts, nudges, and target-date context
+- Submit Update workflow for free-form text ingestion with optional LLM parsing
+- Ask SPARROW endpoint for natural-language questions against current tracker data
+- Timeline view for deployment and dev-track phases
+- Reports and settings pages for monitoring and operational context
+- Azure DevOps sync support for sprint and work item visibility
+
+## Requirements
+
+- Python 3.10+
+- SQLite for the default local runtime
+- Optional Azure OpenAI credentials for AI-assisted parsing and Q&A
+- Optional Azure DevOps auth for sync features
+- Optional Azure SQL credentials if you plan to migrate off SQLite
+
+## Installation
 
 ```bash
-git clone https://github.com/rmdodhia/sparrow-tracker
+git clone https://github.com/rmdodhia/sparrow-tracker.git
 cd sparrow-tracker
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-python seed_data.py
-streamlit run app.py
 ```
 
-See [Setup](#setup) below for Python version, virtualenv, and credential config.
+Create a `.env` file in the repo root if you want any external integrations enabled.
 
----
+## Environment Variables
 
-## For users of the app
+### Optional Azure OpenAI
 
-### What it does
-
-- **Dashboard** — summary of every installation: who's active, who's blocked,
-  what's at risk, what's coming up.
-- **Submit Update** — paste an email, a meeting note, or a quick sentence.
-  The app parses it with an LLM, extracts the project, status change, blocker,
-  dates, and contacts, and asks you to confirm before saving.
-- **Project Details** — full history for one installation, editable fields,
-  contacts, linked DevOps work items.
-- **Sprints** — Sprint Board and By Person views of Azure DevOps work items
-  pulled from the "AI For Good Lab" project. Sprints are grouped by each
-  item's `iteration_path` (monthly).
-- **Reports** — status breakdowns, stale-project nudges, deadline alerts.
-- **Settings** — DevOps sync, connection tests, team config.
-
-### Status model
-
-Every project has one of five statuses, plus an independent **At Risk** flag:
-
-| Status | Meaning |
-|---|---|
-| Scoping | Still defining the work |
-| Active — Waiting on Partner | Ball is in the partner's court |
-| Active — Waiting on Us | Ball is in our court |
-| Complete | Installed and handed off |
-| Descoped | No longer proceeding |
-
-Projects go "stale" (a nudge fires) based on status: 21 days for Scoping,
-14 for Waiting-on-Partner, 7 for Waiting-on-Us.
-
-### Ask SPARROW
-
-The sidebar has a free-text question box — "What's blocked?", "FY26 deadlines",
-"Recent changes". It answers against the current DB state.
-
-### Getting help
-
-Email Rahul (radodhia@microsoft.com) or file an issue on
-[github.com/rmdodhia/sparrow-tracker](https://github.com/rmdodhia/sparrow-tracker).
-
----
-
-## For developers
-
-### Stack
-
-- **Streamlit** for the UI (single-file `app.py` with a custom Fluent-style theme in `theme.py`).
-- **SQLite** for local dev storage, **Azure SQL** for production (`db.py` auto-selects based on `AZURE_SQL_CONNECTION_STRING`).
-- **Azure OpenAI** for update parsing and the Ask-SPARROW Q&A (`llm.py`).
-- **Azure DevOps REST API** for sprint + work-item sync (`devops_sync.py`).
-- **Microsoft Graph** for email ingestion in production (`graph_email.py`), with IMAP as legacy fallback (`email_ingest.py`).
-
-### Layout
-
-```
-app.py              Streamlit entry point (all pages)
-theme.py            CSS, HTML helpers, pill/badge/card renderers
-config.py           Env vars, status enum, FY helpers, team list
-db.py               Database layer (SQLite + Azure SQL dual backend)
-llm.py              Azure OpenAI client + update parsing prompt
-devops_sync.py      Azure DevOps WIQL + iteration sync
-graph_email.py      Microsoft Graph email client (production)
-email_ingest.py     Email ingestion router (Graph or IMAP)
-monitor.py          Staleness + deadline nudge generator
-notifications.py    SMTP sender for nudges
-seed_data.py        Seeds the DB with the current installation list
-infra/              Bicep IaC templates + deployment script
-mockups/            v2 HTML mockups — the app is expected to match these
+```env
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_DEPLOYMENT=
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_API_VERSION=2024-10-21
 ```
 
-Design constraint worth knowing up front: **the Streamlit UI must match the v2
-HTML mockups in `mockups/`**. Divergence has been flagged in review. When you
-change layout or styling, open the relevant `v2_*.html` side-by-side.
+Without these values, the app still runs, but AI parsing and Ask SPARROW responses are disabled.
 
-### Setup
+### Optional Azure DevOps
 
-Requires **Python 3.10+**.
+```env
+AZURE_DEVOPS_ORG=onecela
+AZURE_DEVOPS_PROJECT=AI For Good Lab
+AZURE_DEVOPS_PAT=
+DEVOPS_SPRINT_QUERY_ID=
+```
+
+If `AZURE_DEVOPS_PAT` is not set, the sync code attempts Azure AD authentication via `az login`.
+
+### Optional Azure SQL
+
+```env
+AZURE_SQL_SERVER=
+AZURE_SQL_DATABASE=
+AZURE_SQL_USER=
+AZURE_SQL_PASSWORD=
+```
+
+Note: the checked-in Flask app currently uses [db.py](/home/radodhia/sparrow-tracker-v2/db.py), which is SQLite-backed by default. The Azure SQL files are present for migration and parallel development work.
+
+### Optional Email and SMTP
+
+```env
+IMAP_HOST=
+IMAP_PORT=993
+IMAP_USER=
+IMAP_PASS=
+IMAP_FOLDER=INBOX
+IMAP_DONE_FOLDER=
+
+SPARROW_SMTP_HOST=
+SPARROW_SMTP_PORT=587
+SPARROW_SMTP_USER=
+SPARROW_SMTP_PASS=
+SPARROW_NOTIFY_FROM=sparrow-tracker@noreply.local
+```
+
+## Running The App
+
+Either of these works:
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/rmdodhia/sparrow-tracker
-cd sparrow-tracker
-python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# 2. Configure secrets
-cp .env.example .env
-# Edit .env — see "Minimal run" vs "Full run" below for what to fill in
-
-# 3. Seed the DB from the committed backlog (first time only)
-python seed_data.py
-
-# 4. Run
-streamlit run app.py
+python app.py
 ```
 
-Open http://localhost:8501 in a browser.
-
-#### Minimal run (no credentials)
-
-You can run the app with an empty `.env` — it will start, show the dashboard,
-and let you browse the seeded projects. What you lose:
-
-- **Submit Update** LLM parsing (sidebar shows "⚠️ LLM not configured")
-- **Ask SPARROW** natural-language Q&A
-- **Sprints** / DevOps sync
-- **Email ingestion** and **nudge emails**
-
-Everything else — browsing projects, editing fields by hand, reports, the
-history timeline — works.
-
-#### Full run (with credentials)
-
-Fill in `.env`:
-
-1. **Azure OpenAI** (required for LLM features): set `AZURE_OPENAI_ENDPOINT`,
-   `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_KEY`. The example file points at
-   the AI For Good Lab's EU2 deployment; swap in your own if you're outside
-   the lab.
-2. **Azure DevOps** (optional, for Sprints page): either set
-   `AZURE_DEVOPS_PAT`, or leave it blank and run `az login` once so the app
-   can use Entra ID via `DefaultAzureCredential`. Default org/project are
-   `onecela` / `AI For Good Lab` — override with `AZURE_DEVOPS_ORG` /
-   `AZURE_DEVOPS_PROJECT` if you're pointing elsewhere.
-3. **Microsoft Graph** (recommended for email ingestion): set `GRAPH_CLIENT_ID`,
-   `GRAPH_CLIENT_SECRET`, `GRAPH_TENANT_ID`, `GRAPH_USER_EMAIL`. Requires an
-   app registration with `Mail.ReadWrite` (Application) permission and admin
-   consent. See [Deploying to Azure](#deploying-to-azure) below.
-4. **IMAP** (legacy fallback, used when Graph is not configured): set `IMAP_HOST`,
-   `IMAP_PORT`, `IMAP_USER`, `IMAP_PASS`.
-5. **SMTP** (optional, for nudge emails): set the `SPARROW_SMTP_*` vars.
-
-### Environment variables
-
-| Var | Required | Purpose |
-|---|---|---|
-| `AZURE_OPENAI_ENDPOINT` | yes | Enables update parsing + Ask SPARROW |
-| `AZURE_OPENAI_DEPLOYMENT` | yes | e.g. `gpt-54` |
-| `AZURE_OPENAI_API_KEY` | yes | |
-| `AZURE_OPENAI_API_VERSION` | no | Defaults to `2024-10-21` |
-| `AZURE_SQL_CONNECTION_STRING` | for Azure SQL | If set, uses Azure SQL instead of SQLite |
-| `GRAPH_CLIENT_ID` | for email | App registration client ID |
-| `GRAPH_CLIENT_SECRET` | for email | App registration client secret |
-| `GRAPH_TENANT_ID` | for email | Microsoft Entra tenant ID |
-| `GRAPH_USER_EMAIL` | for email | Mailbox to read (e.g. `sparrow-tracker@microsoft.com`) |
-| `AZURE_DEVOPS_ORG` | no | Defaults to `onecela` |
-| `AZURE_DEVOPS_PROJECT` | no | Defaults to `AI For Good Lab` |
-| `AZURE_DEVOPS_PAT` | no | Optional PAT override. If unset, auth uses Entra ID via `DefaultAzureCredential` (run `az login` once on dev machines). |
-| `IMAP_HOST` / `_PORT` / `_USER` / `_PASS` | legacy email | Fallback if Graph is not configured |
-| `SPARROW_SMTP_*` | for nudges | Outgoing mail for staleness alerts |
-
-`.env` is gitignored. Never commit it.
-
-### Database
-
-Two backends, auto-selected by the `AZURE_SQL_CONNECTION_STRING` env var:
-
-- **SQLite** (default, local dev) — `sparrow_tracker.db` at the repo root. Gitignored.
-- **Azure SQL** (production) — set `AZURE_SQL_CONNECTION_STRING` in `.env`.
-
-Tables:
-
-- `projects` — one row per installation
-- `history` — append-only log of every status change / note
-- `contacts` — partner contacts per project
-- `raw_inputs` — unparsed emails/notes before LLM extraction
-- `nudges` — active staleness and deadline alerts
-- `devops_work_items` — DevOps sync cache (sprint = `iteration_path` field on each row)
-- `phases` — timeline phases per project (Gantt chart data)
-
-Schema lives in `db.py::init_db()`. It's idempotent — safe to re-run.
-
-### Running DevOps sync
-
-```python
-from devops_sync import sync_all
-sync_all()   # pulls iterations + work items matching DEVOPS_SEARCH_TERMS
-```
-
-Or hit the **Sync now** button on the Settings page. Search terms are
-configured in `config.py::DEVOPS_SEARCH_TERMS`
-(`sparrow`, `pytorch wildlife`, `condor`, `owl`).
-
-### Known gaps
-
-- Importing `SPARROW_BACKLOG_OF_PRIORITIES.xlsx` into the DB is not yet wired up.
-- The Gantt / FY26-27 Roadmap view from the xlsx has no equivalent page yet.
-- DevOps work items aren't linked back to projects (`linked_project_id`).
-- `status_pill_html` callers don't all pass `is_at_risk`.
-
-### Contributing
-
-PRs welcome. Before opening one:
-
-1. Re-run `streamlit run app.py` and click through every page.
-2. If you touched layout, compare against the matching `mockups/v2_*.html`.
-3. Keep `db.py` migrations additive — there's no migration framework.
-
----
-
-## Deploying to Azure
-
-The app is designed to run on **Azure App Service** (Linux, Python 3.11) with
-**Azure SQL Database** and **Microsoft Graph** for email ingestion.
-
-### Prerequisites
-
-- Azure CLI authenticated to the Microsoft tenant (`az login --tenant 72f988bf-...`)
-- PIM activated for the target subscription
-- App registration with `Mail.ReadWrite` (Application) permission + admin consent
-
-### Infrastructure (Bicep)
-
-Bicep templates are in `infra/`. They provision:
-
-- **App Service Plan** (B1 Linux) + **Web App** (`sparrow-tracker`)
-- **Azure SQL Server** + **Database** (Basic tier, 2 GB)
-- System-assigned managed identity on the Web App
+or:
 
 ```bash
-# Deploy everything (prompts for SQL password)
-./infra/deploy.sh <sql-admin-password> [graph-client-secret]
+flask --app app run --debug --port 5001
 ```
 
-### Post-deployment
+Then open `http://127.0.0.1:5001`.
+
+On startup, the app automatically initializes the SQLite schema in `sparrow_tracker.db` if it does not already exist.
+
+## Data Initialization
+
+This repository no longer includes the legacy Excel backlog workbook that `seed_data.py` expects. That means:
+
+- The app can still start with an empty or existing SQLite database.
+- `python seed_data.py` will only work if you supply the source workbook at the path the script expects.
+- If you already have a populated `sparrow_tracker.db`, the app will use it directly.
+
+## Azure SQL Migration
+
+If you want to copy your existing SQLite data into Azure SQL:
 
 ```bash
-# 1. Set the remaining app settings (OpenAI, DevOps)
-az webapp config appsettings set \
-  --resource-group ai4gl-sparrow-prod-rg \
-  --name sparrow-tracker \
-  --settings \
-    AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/ \
-    AZURE_OPENAI_DEPLOYMENT=gpt-54 \
-    AZURE_OPENAI_API_KEY=your-key
-
-# 2. Deploy the app code
-az webapp deploy \
-  --resource-group ai4gl-sparrow-prod-rg \
-  --name sparrow-tracker \
-  --src-path .
-
-# 3. Initialize the database schema
-python -c "from db import init_db; init_db()"
-
-# 4. (Optional) Seed with data
-python seed_data.py
+python migrate_to_azure.py
 ```
 
-### App Registration Setup
+Before running that script, set the Azure SQL credentials in `.env`.
 
-The app registration (`5f813bb9-d2c4-4246-ba36-3c394a0ade39`) needs:
+## Repo Layout
 
-```bash
-# Add Mail.ReadWrite (Application) permission
-az ad app permission add \
-  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39 \
-  --api 00000003-0000-0000-c000-000000000000 \
-  --api-permissions e2a3a72e-5f79-4c64-b1b1-878b674786c9=Role
-
-# Create a client secret (save the output!)
-az ad app credential reset \
-  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39 \
-  --append --display-name "sparrow-tracker-app-service" --years 1
-
-# Grant admin consent (requires tenant admin)
-az ad app permission admin-consent \
-  --id 5f813bb9-d2c4-4246-ba36-3c394a0ade39
+```text
+app.py
+config.py
+db.py
+db_azure.py
+devops_sync.py
+email_ingest.py
+llm.py
+migrate_to_azure.py
+monitor.py
+notifications.py
+seed_data.py
+seed_dev_tracks.py
+static/
+templates/
 ```
+
+## Notes
+
+- The app secret key is currently hard-coded in `app.py` for local development.
+- LLM-powered flows are runtime-optional and degrade to non-AI behavior when Azure OpenAI is not configured.
+- DevOps, IMAP, SMTP, and Azure SQL integrations are optional and only needed if you use those features.

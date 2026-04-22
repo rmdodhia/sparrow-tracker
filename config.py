@@ -23,24 +23,35 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "sparrow_tracker.db")
 AZURE_SQL_CONNECTION_STRING = os.environ.get("AZURE_SQL_CONNECTION_STRING", "")
 DB_BACKEND = "azure_sql" if AZURE_SQL_CONNECTION_STRING else "sqlite"
 
-# --- Status Enum ---
-# Simplified statuses. "At Risk" is a flag (is_at_risk) that can be tacked onto any status.
+# --- Lifecycle (project stage) ---
 VALID_STATUSES = [
     "Scoping",
-    "Active - Waiting on Partner",
-    "Active - Waiting on Us",
+    "Active",
     "Complete",
     "Descoped",
 ]
+
+# --- Health (how it's going — applies to Scoping & Active) ---
+VALID_HEALTH = [
+    "On Track",
+    "Waiting on Partner",
+    "Waiting on Us",
+    "Blocked",
+]
+
+# --- Priority ---
+VALID_PRIORITIES = ["TOP", "MID", "LOW"]
 
 # Statuses that are considered "closed" (no monitoring needed)
 CLOSED_STATUSES = {"Complete", "Descoped"}
 
 # --- Staleness Thresholds (days with no update before a nudge fires) ---
+# Keyed off health. "Waiting on Us" gets the shortest leash; "Blocked" is flagged fast.
 STALENESS_THRESHOLDS = {
-    "Scoping":                       21,
-    "Active - Waiting on Partner":   14,
-    "Active - Waiting on Us":         7,
+    "On Track":            14,
+    "Waiting on Partner":  21,
+    "Waiting on Us":        7,
+    "Blocked":              3,
 }
 
 # --- Deadline Alert Windows (days before target_date) ---
@@ -57,24 +68,18 @@ TEAM_MEMBERS = ["Bruno", "Carl", "Miao", "Rahul", "Manolo"]
 # Keyed off projects.item_type ('deployment' vs 'dev_track').
 DEV_PHASE_KEYS    = ["Dev", "Testing", "Manual", "OpenSource", "Launch", "Rollout"]
 DEPLOY_PHASE_KEYS = ["Scoping", "Approved", "OnTrack", "Installed", "Done"]
-PHASE_STATUSES    = ["Planned", "In Progress", "Done", "Blocked", "At Risk", "On Hold", "Cancelled"]
+PHASE_STATUSES    = ["Todo", "Doing", "Done"]
 
-# Muted professional palette (slates + ceruleans + amber) for the Gantt.
-# Done is a dark slate (work complete, de-emphasized). In Progress is a
-# saturated cerulean so active work pops. Planned is a pale slate.
-# At Risk / Blocked use warm amber/crimson for immediate attention.
+# Muted professional palette for the Gantt.
+# Todo is a pale slate, Doing is saturated cerulean, Done is dark slate.
 PHASE_STATUS_COLORS = {
-    "Planned":     "#cbd5e1",   # slate-300
-    "In Progress": "#1d4ed8",   # blue-700 (cerulean)
-    "Done":        "#475569",   # slate-600
-    "Blocked":     "#b91c1c",   # red-700
-    "At Risk":     "#d97706",   # amber-600
-    "On Hold":     "#e2e8f0",   # slate-200
-    "Cancelled":   "#f1f5f9",   # slate-100
+    "Todo":  "#cbd5e1",   # slate-300
+    "Doing": "#1d4ed8",   # blue-700 (cerulean)
+    "Done":  "#475569",   # slate-600
 }
 
 # Statuses whose bars are light enough to need dark text inside them.
-PHASE_LIGHT_FILL_STATUSES = {"Planned", "On Hold", "Cancelled"}
+PHASE_LIGHT_FILL_STATUSES = {"Todo"}
 
 # --- Microsoft Fiscal Year Helpers ---
 def fy_end_date(fy_year: int) -> date:

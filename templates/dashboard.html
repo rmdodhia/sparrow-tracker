@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}Dashboard — SPARROW Tracker{% endblock %}
+{% block content %}
+
+<div class="page-title">Dashboard</div>
+
+{# ── Hero Banner ──────────────────────────────────────── #}
+<div class="hero">
+  <div class="hero-stat"><div class="num">{{ projects | length }}</div><div class="lbl">Total Projects</div></div>
+  <div class="hero-stat"><div class="num">{{ continents }}</div><div class="lbl">Continents</div></div>
+  <div class="hero-stat"><div class="num">{{ countries }}</div><div class="lbl">Countries</div></div>
+  <div class="hero-stat"><div class="num">{{ active }}</div><div class="lbl">Active</div></div>
+  <div class="hero-stat"><div class="num">{{ completed }}</div><div class="lbl">Complete</div></div>
+</div>
+
+{# ── Attention Banner ─────────────────────────────────── #}
+{% if attention %}
+<div class="attention">
+  <div class="dot"></div>
+  <strong>{{ attention | length }} project{{ 's' if attention | length != 1 }} need{{ '' if attention | length != 1 else 's' }} attention</strong>
+</div>
+{% endif %}
+
+{# ── Stat Cards ───────────────────────────────────────── #}
+<div class="stats">
+  {% for status, count in summary.items() %}
+  <div class="stat-card {{ status | lower }}">
+    <div class="count">{{ count }}</div>
+    <div class="label">{{ status }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Status Bar ───────────────────────────────────────── #}
+{% set total = summary.values() | sum %}
+{% set status_colors = {'scoping': '#8d6e63', 'active': '#2e7d32', 'complete': '#00695c', 'descoped': '#bdbdbd'} %}
+{% if total > 0 %}
+<div class="status-bar">
+  {% for status, count in summary.items() %}
+  <div class="seg" style="width:{{ (count / total * 100) | round(1) }}%;background:{{ status_colors[status | lower] | default('#bdbdbd') }}"></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── All Projects Table ───────────────────────────────── #}
+{% set status_pill = {'Active': 'active', 'Scoping': 'scoping', 'Complete': 'complete', 'Descoped': 'descoped'} %}
+{% set health_pill = {'On Track': 'on-track', 'Waiting on Partner': 'waiting-partner', 'Waiting on Us': 'waiting-us', 'Blocked': 'blocked'} %}
+{% set priority_pill = {'TOP': 'pri-top', 'MID': 'pri-mid', 'LOW': 'pri-low'} %}
+
+<div class="table-card">
+  <div class="table-header">
+    <span>All Projects</span>
+    <button class="btn btn-primary">Save changes</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Location</th>
+        <th>Partner</th>
+        <th>Stage</th>
+        <th>Status</th>
+        <th>Priority</th>
+        <th>Owner</th>
+        <th>Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_details', project_id=p.project_id) }}"><code style="color:#1b5e20;background:#e8f5e9;padding:2px 6px;border-radius:3px;font-size:11px">{{ p.project_id }}</code></a></td>
+        <td>{{ p.location }}</td>
+        <td>{{ p.partner_org }}</td>
+        <td><span class="pill {{ status_pill[p.status] | default('') }}">{{ p.status }}</span></td>
+        <td><span class="pill {{ health_pill[p.health] | default('') }}">{{ p.health }}</span></td>
+        <td><span class="pill {{ priority_pill[p.priority] | default('') }}">{{ p.priority }}</span></td>
+        <td>{{ p.team_owner }}</td>
+        <td>{{ p.target_date or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

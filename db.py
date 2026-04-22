@@ -121,6 +121,7 @@ def _init_db_sqlite():
             location          TEXT,
             partner_org       TEXT,
             status            TEXT NOT NULL DEFAULT 'Scoping',
+            health            TEXT NOT NULL DEFAULT 'On Track',
             blocker           TEXT,
             deployment_type   TEXT,
             timeline_label    TEXT,          -- human-readable: "Before End FY26"
@@ -133,7 +134,11 @@ def _init_db_sqlite():
             notes             TEXT,
             last_updated      TEXT NOT NULL,
             last_updated_by   TEXT,
-            is_at_risk        INTEGER NOT NULL DEFAULT 0
+            is_at_risk        INTEGER NOT NULL DEFAULT 0,
+            priority          TEXT,          -- TOP / MID / LOW
+            sparrow           INTEGER NOT NULL DEFAULT 0,
+            sparrow_go        INTEGER NOT NULL DEFAULT 0,
+            robin             INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS history (
@@ -212,7 +217,7 @@ def _init_db_sqlite():
             ordering            INTEGER NOT NULL DEFAULT 0,
             start_date          TEXT,                -- ISO date
             end_date            TEXT,                -- ISO date
-            status              TEXT NOT NULL DEFAULT 'Planned',
+            status              TEXT NOT NULL DEFAULT 'Todo',
             depends_on_phase_id INTEGER,
             devops_id           INTEGER,
             notes               TEXT,
@@ -232,11 +237,35 @@ def _init_db_sqlite():
         except Exception:
             conn.execute("ALTER TABLE projects ADD COLUMN is_at_risk INTEGER NOT NULL DEFAULT 0")
 
+        # Add health column if missing (existing DBs)
+        try:
+            conn.execute("SELECT health FROM projects LIMIT 1")
+        except Exception:
+            conn.execute("ALTER TABLE projects ADD COLUMN health TEXT NOT NULL DEFAULT 'On Track'")
+
+        # Add priority / hardware-boolean columns if missing
+        for col, ddl in [
+            ("priority",   "TEXT"),
+            ("sparrow",    "INTEGER NOT NULL DEFAULT 0"),
+            ("sparrow_go", "INTEGER NOT NULL DEFAULT 0"),
+            ("robin",      "INTEGER NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(f"SELECT {col} FROM projects LIMIT 1")
+            except Exception:
+                conn.execute(f"ALTER TABLE projects ADD COLUMN {col} {ddl}")
+
         # Add phase-era columns to projects (item_type, track_name, start_date, parent_project_id)
         _migrate_phase_columns(conn)
 
         # Migrate old statuses to new simplified statuses
         _migrate_statuses(conn)
+
+        # Migrate to lifecycle + health model (Active - Waiting on X → Active + health)
+        _migrate_to_lifecycle_health(conn)
+
+        # Migrate old phase statuses to Todo/Doing/Done
+        _migrate_phase_statuses(conn)
 
         # Backfill one phase per deployment (idempotent — only runs when no phase exists yet)
         _backfill_phases(conn)
@@ -377,11 +406,10 @@ def _migrate_phase_columns(conn):
 
 
 _STATUS_TO_PHASE_STATUS = {
-    "Scoping":                       "Planned",
-    "Active - Waiting on Partner":   "In Progress",
-    "Active - Waiting on Us":        "In Progress",
-    "Complete":                      "Done",
-    "Descoped":                      "Cancelled",
+    "Scoping":  "Todo",
+    "Active":   "Doing",
+    "Complete": "Done",
+    "Descoped": "Done",
 }
 
 
@@ -389,7 +417,7 @@ def _backfill_phases(conn):
     """For any project with no phases yet, synthesize a single phase from its target_date + status."""
     rows = conn.execute("""
         SELECT p.project_id, p.status, p.target_date, p.timeline_label,
-               p.start_date, p.last_updated, p.is_at_risk
+               p.start_date, p.last_updated
         FROM projects p
         LEFT JOIN phases ph ON ph.project_id = p.project_id
         WHERE ph.id IS NULL
@@ -397,9 +425,7 @@ def _backfill_phases(conn):
     """).fetchall()
     now = datetime.utcnow().isoformat(timespec="seconds")
     for r in rows:
-        phase_status = _STATUS_TO_PHASE_STATUS.get(r["status"], "Planned")
-        if r["is_at_risk"] and phase_status == "In Progress":
-            phase_status = "At Risk"
+        phase_status = _STATUS_TO_PHASE_STATUS.get(r["status"], "Todo")
         # Derive a plausible start so the Gantt bar has width.
         start = r["start_date"]
         end = r["target_date"]
@@ -419,7 +445,7 @@ def _backfill_phases(conn):
         conn.execute(
             """INSERT INTO phases
                (project_id, phase_key, name, ordering, start_date, end_date, status, last_updated)
-               VALUES (?, 'installed', ?, 0, ?, ?, ?, ?)""",
+               VALUES (?, 'custom', ?, 0, ?, ?, ?, ?)""",
             (r["project_id"], name, start, end, phase_status, now),
         )
 
@@ -444,6 +470,52 @@ def _migrate_statuses(conn):
         conn.execute(
             "UPDATE projects SET status = ?, is_at_risk = MAX(is_at_risk, ?) WHERE status = ?",
             (new_status, is_risk, old_status),
+        )
+
+
+def _migrate_to_lifecycle_health(conn):
+    """Migrate 'Active - Waiting on X' statuses to lifecycle + health model. Idempotent."""
+    # Only run if old-style statuses still exist
+    old = conn.execute(
+        "SELECT COUNT(*) FROM projects WHERE status LIKE 'Active - %'"
+    ).fetchone()[0]
+    if old == 0:
+        return
+
+    # Active - Waiting on Partner  →  status=Active, health=Waiting on Partner
+    conn.execute(
+        "UPDATE projects SET health = 'Waiting on Partner', status = 'Active' "
+        "WHERE status = 'Active - Waiting on Partner' AND is_at_risk = 0"
+    )
+    conn.execute(
+        "UPDATE projects SET health = 'Blocked', status = 'Active' "
+        "WHERE status = 'Active - Waiting on Partner' AND is_at_risk = 1"
+    )
+    # Active - Waiting on Us  →  status=Active, health=Waiting on Us
+    conn.execute(
+        "UPDATE projects SET health = 'Waiting on Us', status = 'Active' "
+        "WHERE status = 'Active - Waiting on Us' AND is_at_risk = 0"
+    )
+    conn.execute(
+        "UPDATE projects SET health = 'Blocked', status = 'Active' "
+        "WHERE status = 'Active - Waiting on Us' AND is_at_risk = 1"
+    )
+
+
+def _migrate_phase_statuses(conn):
+    """Migrate old 7-value phase statuses to Todo/Doing/Done. Idempotent."""
+    phase_map = {
+        "Planned":     "Todo",
+        "In Progress": "Doing",
+        "Blocked":     "Doing",
+        "At Risk":     "Doing",
+        "On Hold":     "Todo",
+        "Cancelled":   "Done",
+    }
+    for old_ps, new_ps in phase_map.items():
+        conn.execute(
+            "UPDATE phases SET status = ? WHERE status = ?",
+            (new_ps, old_ps),
         )
 
 
@@ -651,7 +723,7 @@ def get_stale_projects():
     stale = []
     now = datetime.utcnow()
     for p in projects:
-        threshold = p.get("stale_threshold_days") or STALENESS_THRESHOLDS.get(p["status"])
+        threshold = p.get("stale_threshold_days") or STALENESS_THRESHOLDS.get(p.get("health", "On Track"))
         if threshold is None:
             continue
         last = datetime.fromisoformat(p["last_updated"])
@@ -726,7 +798,7 @@ def upsert_phases(project_id: str, rows: list):
                 "ordering":           int(row.get("ordering") if row.get("ordering") is not None else i),
                 "start_date":         row.get("start_date") or None,
                 "end_date":           row.get("end_date") or None,
-                "status":             row.get("status") or "Planned",
+                "status":             row.get("status") or "Todo",
                 "depends_on_phase_id": row.get("depends_on_phase_id") or None,
                 "notes":              row.get("notes") or None,
             }
@@ -804,7 +876,7 @@ def apply_phase_change(project_id: str, change: dict):
                  updates.get("name") or "New phase",
                  int(updates.get("ordering") or 0),
                  updates.get("start_date"), updates.get("end_date"),
-                 updates.get("status") or "Planned",
+                 updates.get("status") or "Todo",
                  updates.get("notes"), now),
             )
             return {"action": "create", "phase_id": _last_insert_id(cur, conn), "field_updates": updates}
@@ -858,6 +930,7 @@ def get_timeline_rows(include_closed=True):
                 p.location        AS location,
                 p.partner_org     AS partner_org,
                 p.status          AS project_status,
+                p.health          AS project_health,
                 p.is_at_risk      AS is_at_risk,
                 p.target_date     AS project_target_date,
                 p.last_updated    AS project_last_updated
