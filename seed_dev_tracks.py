@@ -134,17 +134,17 @@ DEPENDENCIES = [
 
 
 def _find_phase_id(conn, project_id, phase_name_contains=None):
+    from config import DB_BACKEND
     if phase_name_contains:
-        row = conn.execute(
-            "SELECT id FROM phases WHERE project_id = ? AND name LIKE ? ORDER BY ordering LIMIT 1",
-            (project_id, f"%{phase_name_contains}%"),
-        ).fetchone()
+        sql = ("SELECT TOP 1 id FROM phases WHERE project_id = ? AND name LIKE ? ORDER BY ordering"
+               if DB_BACKEND == "azure_sql" else
+               "SELECT id FROM phases WHERE project_id = ? AND name LIKE ? ORDER BY ordering LIMIT 1")
+        row = conn.execute(sql, (project_id, f"%{phase_name_contains}%")).fetchone()
     else:
-        # For deployments with one backfilled phase, just take the first one.
-        row = conn.execute(
-            "SELECT id FROM phases WHERE project_id = ? ORDER BY ordering LIMIT 1",
-            (project_id,),
-        ).fetchone()
+        sql = ("SELECT TOP 1 id FROM phases WHERE project_id = ? ORDER BY ordering"
+               if DB_BACKEND == "azure_sql" else
+               "SELECT id FROM phases WHERE project_id = ? ORDER BY ordering LIMIT 1")
+        row = conn.execute(sql, (project_id,)).fetchone()
     return row[0] if row else None
 
 
