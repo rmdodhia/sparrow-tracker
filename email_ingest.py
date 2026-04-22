@@ -1,8 +1,12 @@
 """
 SPARROW Installation Tracker — Email Ingestion
 
-Polls an IMAP mailbox for new emails and processes them through the LLM pipeline.
-Processed emails are marked as read (or moved to a folder) so they aren't re-processed.
+Supports two backends:
+  - Microsoft Graph (production) — reads from sparrow-tracker@microsoft.com
+  - IMAP (legacy/local dev) — polls an IMAP mailbox
+
+Backend is auto-selected based on config: Graph if GRAPH_CLIENT_ID is set,
+otherwise IMAP if IMAP_HOST is set.
 """
 
 import imaplib
@@ -12,7 +16,7 @@ from datetime import datetime
 
 from config import (
     IMAP_HOST, IMAP_PORT, IMAP_USER, IMAP_PASS,
-    IMAP_FOLDER, IMAP_DONE_FOLDER,
+    IMAP_FOLDER, IMAP_DONE_FOLDER, EMAIL_BACKEND,
 )
 from llm import parse_input
 from db import (
@@ -175,8 +179,56 @@ def move_to_done(imap, uid):
 def process_mailbox(auto_apply=False, limit=20):
     """Poll the mailbox, parse each email through the LLM, optionally auto-apply.
 
+    Auto-selects Graph or IMAP backend based on config.EMAIL_BACKEND.
     Returns a list of results, one per email processed.
     """
+    if EMAIL_BACKEND == "graph":
+        return _process_mailbox_graph(auto_apply=auto_apply, limit=limit)
+    return _process_mailbox_imap(auto_apply=auto_apply, limit=limit)
+
+
+def _process_mailbox_graph(auto_apply=False, limit=20):
+    """Process emails via Microsoft Graph API."""
+    from graph_email import (
+        fetch_unread_emails as graph_fetch,
+        mark_as_read as graph_mark_read,
+        move_to_folder as graph_move,
+    )
+    results = []
+    emails = graph_fetch(limit=limit)
+
+    for em in emails:
+        full_text = f"Subject: {em['subject']}\nFrom: {em['sender']}\n\n{em['body']}"
+        parsed = parse_input(full_text, submitted_by=em["sender"])
+
+        entry = {
+            "email": em,
+            "parsed": parsed,
+            "applied": False,
+        }
+
+        if auto_apply and parsed.get("input_type") == "update":
+            high_confidence = all(
+                m.get("match_confidence") == "high"
+                for m in parsed.get("matched_projects", [])
+            )
+            if high_confidence and parsed.get("proposed_changes"):
+                apply_result = _apply_result(parsed, full_text, em["sender"])
+                entry["apply_result"] = apply_result
+                entry["applied"] = True
+                graph_move(em["id"])
+            else:
+                graph_mark_read(em["id"])
+        else:
+            graph_mark_read(em["id"])
+
+        results.append(entry)
+
+    return results
+
+
+def _process_mailbox_imap(auto_apply=False, limit=20):
+    """Process emails via IMAP (legacy)."""
     imap = connect_imap()
     results = []
 
@@ -194,7 +246,6 @@ def process_mailbox(auto_apply=False, limit=20):
             }
 
             if auto_apply and parsed.get("input_type") == "update":
-                # Only auto-apply high-confidence matches
                 high_confidence = all(
                     m.get("match_confidence") == "high"
                     for m in parsed.get("matched_projects", [])
