@@ -444,9 +444,7 @@ def _backfill_phases(conn):
         SELECT p.project_id, p.status, p.target_date, p.timeline_label,
                p.start_date, p.last_updated
         FROM projects p
-        LEFT JOIN phases ph ON ph.project_id = p.project_id
-        WHERE ph.id IS NULL
-        GROUP BY p.project_id
+        WHERE NOT EXISTS (SELECT 1 FROM phases ph WHERE ph.project_id = p.project_id)
     """).fetchall()
     now = datetime.utcnow().isoformat(timespec="seconds")
     for r in rows:
