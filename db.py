@@ -284,6 +284,7 @@ def _init_db_azure_sql():
             location          NVARCHAR(500),
             partner_org       NVARCHAR(500),
             status            NVARCHAR(100) NOT NULL DEFAULT 'Scoping',
+            health            NVARCHAR(100) NOT NULL DEFAULT 'On Track',
             blocker           NVARCHAR(MAX),
             deployment_type   NVARCHAR(200),
             timeline_label    NVARCHAR(200),
@@ -297,6 +298,10 @@ def _init_db_azure_sql():
             last_updated      NVARCHAR(30) NOT NULL,
             last_updated_by   NVARCHAR(200),
             is_at_risk        INT NOT NULL DEFAULT 0,
+            priority          NVARCHAR(10),
+            sparrow           INT NOT NULL DEFAULT 0,
+            sparrow_go        INT NOT NULL DEFAULT 0,
+            robin             INT NOT NULL DEFAULT 0,
             item_type         NVARCHAR(50) NOT NULL DEFAULT 'deployment',
             track_name        NVARCHAR(500),
             start_date        NVARCHAR(20),
@@ -388,6 +393,26 @@ def _init_db_azure_sql():
         )
         """)
         conn.commit()
+
+        # Migrations for existing Azure SQL databases — add columns that may be missing
+        _migrate_azure_sql_columns(cursor, conn)
+
+
+def _migrate_azure_sql_columns(cursor, conn):
+    """Add columns to Azure SQL projects table if missing. Idempotent."""
+    migrations = [
+        ("health",     "NVARCHAR(100) NOT NULL DEFAULT 'On Track'"),
+        ("priority",   "NVARCHAR(10)"),
+        ("sparrow",    "INT NOT NULL DEFAULT 0"),
+        ("sparrow_go", "INT NOT NULL DEFAULT 0"),
+        ("robin",      "INT NOT NULL DEFAULT 0"),
+    ]
+    for col, ddl in migrations:
+        try:
+            cursor.execute(f"SELECT {col} FROM projects WHERE 1=0")
+        except Exception:
+            cursor.execute(f"ALTER TABLE projects ADD {col} {ddl}")
+            conn.commit()
 
 
 def _migrate_phase_columns(conn):
@@ -541,10 +566,12 @@ def get_project(project_id):
 
 
 _UPDATABLE_PROJECT_FIELDS = {
-    "continent", "country", "location", "partner_org", "status", "blocker",
-    "deployment_type", "timeline_label", "target_date", "target_confidence",
-    "hardware", "estimated_cost", "team_owner", "devops_id", "notes",
-    "is_at_risk", "item_type", "track_name", "start_date", "parent_project_id",
+    "continent", "country", "location", "partner_org", "status", "health",
+    "blocker", "deployment_type", "timeline_label", "target_date",
+    "target_confidence", "hardware", "estimated_cost", "team_owner",
+    "devops_id", "notes", "is_at_risk", "item_type", "track_name",
+    "start_date", "parent_project_id", "priority", "sparrow", "sparrow_go",
+    "robin",
 }
 
 
