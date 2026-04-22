@@ -36,10 +36,22 @@ llm_available = bool(AZURE_OPENAI_ENDPOINT)
 def inject_globals():
     """Make common values available to all templates."""
     projects = get_all_projects()
+    current_project_id = None
+    if request.endpoint == "project_details":
+        current_project_id = (request.view_args or {}).get("project_id")
+
+    if current_project_id:
+        project_details_url = url_for("project_details", project_id=current_project_id)
+    elif projects:
+        project_details_url = url_for("project_details", project_id=projects[0]["project_id"])
+    else:
+        project_details_url = url_for("dashboard")
+
     return dict(
         today=date.today(),
         total_projects=len(projects),
         llm_available=llm_available,
+        project_details_url=project_details_url,
         VALID_STATUSES=VALID_STATUSES,
         VALID_HEALTH=VALID_HEALTH,
         VALID_PRIORITIES=VALID_PRIORITIES,

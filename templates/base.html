@@ -18,7 +18,7 @@
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active_page == 'dashboard' }}">Dashboard</a>
     <a href="{{ url_for('submit_update') }}" class="{{ 'active' if active_page == 'submit_update' }}">Submit Update</a>
     <a href="{{ url_for('timeline') }}" class="{{ 'active' if active_page == 'timeline' }}">Timeline</a>
-    <a href="#" class="{{ 'active' if active_page == 'project_details' }}">Project Details</a>
+    <a href="{{ project_details_url }}" class="{{ 'active' if active_page == 'project_details' }}">Project Details</a>
     <a href="{{ url_for('reports') }}" class="{{ 'active' if active_page == 'reports' }}">Reports</a>
     <a href="{{ url_for('settings') }}" class="{{ 'active' if active_page == 'settings' }}">Settings</a>
   </nav>
